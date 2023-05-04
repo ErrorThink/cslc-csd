@@ -59,7 +59,7 @@ Many of the included scale tables set degree '0' at 263 cps.
 * `scldegmatch` - returns the index in one scale table which matches the pitch from another scale table.
 
 #### EVENT GENERATORS ####
-Event generators produced score events.__
+Event generators produced score events.
 * `orn` - generate score events from arrays of intervals and rhythms
 * `chrdi` - generate concurrant score events
 * `arpi` - generate score events from arrays of scale degrees and rhythms
@@ -67,12 +67,17 @@ Event generators produced score events.__
 * `loopcode` - generate repeating cycles of arbitrary code.
 
 #### PATCH UDO's for signal routing ####
-patching routes audio between named instruments. Patch UDO's guide the path of audio between instruments.
+Patching routes audio between named instruments. Patch UDO's guide the path of audio between instruments.
 In this context 'Source' Intruments send audio to the patch system using the 'send' opcode.
 'Effect' instruments retrieve and send audio back to the patch system. See 'EffectConstruct'.
 
 Syntax:  
-* `patchsig` Ssource, SDestination [,ilevel]** `patchchain` Spatharray[] [,ilevel]** `patchspread` Ssource, SDestinationarray[] [,ilevel]** `send` asig** `send` asig1,asig2** `send` asigs[]o
+`patchsig Ssource, SDestination [,ilevel] `
+`patchchain Spatharray[] [,ilevel]` 
+`patchspread Ssource, SDestinationarray[] [,ilevel]` 
+`send asig` 
+`send asig1,asig2` 
+`send asigs[]o`
 	
 	Ssource -- String name of the instrument or effect sending audio  
 	SDestination -- String name of the effect receiving audio (See EffectConstruct)  
@@ -103,10 +108,11 @@ patchspread "myoscil", fillarray("rvb","compressor")     ; re-route audio to two
 
 EffectConstruct generates 'Effect' instruments. These are 'always on' instruments, but can be re-evaluated to update the code 'on the fly'. Re-evaluating replaces the running instance.
 The generated Effect instrument has an implicit 'send' which sends audio to the Patch system.  
-	Syntax: EffectConstruct SName, Scode, input_count, ioutput_count, icrossfade  
-	Sname -- A name given to the instrument (must be unique). The Patchsend opcodes use this name to route audio.  
+Syntax: 
+`EffectConstruct SName, Scode, input_count, ioutput_count, icrossfade`
+Sname -- A name given to the instrument (must be unique). The Patchsend opcodes use this name to route audio.  
 	Scode -- the body of csound code used to process audio.  
-Input audio arrives in an audio array labelled ains[]. The length of this array depends on input_count. Output audio should be assigned to an audio array labelled aouts[]. The length of this array depends on ioutput_count.__
+Input audio arrives in an audio array labelled ains[]. The length of this array depends on input_count. Output audio should be assigned to an audio array labelled aouts[]. The length of this array depends on ioutput_count.  
 	input_count -- Number of audio inputs (sets the size of the ains[] array)  
 	ioutput_count -- Number of audio outputs (sets the size of the aouts[] array)  
 	icrossfade -- crossfade length in seconds for the transition to the new instance.  
