@@ -9,10 +9,14 @@ with Live Coding sessions using Csound.
 Csound with UDP port 8099 open.
 
 ### USAGE ###
-Code can be sent on UDP port 8099 (or whatever --port is set to in CsOptions).
+Run the command:  
+`$csound cslc.csd`  
+Code can be sent on UDP port 8099 (or whatever --port is set to in CsOptions).  
+To use the instruments in Sounds.orc, save Sounds.orc in your $INCDIR path, (or same directory as cslc.csd)  
+Then uncomment the commandline flag `--omacro:SOUNDLIB=Sounds.orc`  
 Some instrument numbers are reserved and should be avoided: 1 - 10,299,300,301   
-The 'patch' feature requires named instruments.
-All UDO's have i-time versions. This allows them to be used in csound global space (outside instrument defenitions)
+The 'patch' feature requires named instruments.  
+All UDO's have i-time versions. This allows them to be used in csound global space (outside instrument defenitions).  
 
 ### FEATURES / UDO's ###
 	* Patch and send audio between instruments on-the-fly. (See patch* UDO's)
@@ -130,6 +134,7 @@ aouts fillarray aoutL, aoutR
 ```
 #### Other Utilities/miscellaneous ####
 * `fillarray:a` - a-rate version of fillarray
+* `catarray` - concatenate multiple 1d arrays into a single array.
 * `encode2` - encode two audio signals into a single audio signal 
 * `decode2` - decodes two audio signals from one encoded by encode2
 * `encode4` - encode 4 integers into a single integer
