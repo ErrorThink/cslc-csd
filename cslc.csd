@@ -1,6 +1,6 @@
 <CsoundSynthesizer>
 <CsOptions>
--odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
+-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 ;--omacro:SOUNDLIB=Sounds.orc
 </CsOptions>
 <CsVersion>
 After 6.18
@@ -13,8 +13,11 @@ Dependencies:
 Csound with UDP port 8099 open.  
 
 USAGE:
-Code can be sent on UDP port 8099 (or whatever --port is set to in CsOptions).
+Code can be received on UDP port 8099 (or whatever --port is set to in CsOptions).
 Some instrument numbers are reserved and should be avoided: 1 - 10,299,300,301   
+To use the instruments in Sounds.orc, uncomment the commandline flag above:
+`--omacro:SOUNDLIB=Sounds.orc`
+And save Sounds.orc in your $INCDIR path, (or same directory as cslc.csd) 
 The 'patch' feature requires named instruments.
 All UDO's have i-time versions. This allows them to be used in csound global space (outside instrument defenitions)
 
@@ -147,6 +150,7 @@ aouts fillarray aoutL, aoutR
 
 Other Utilities/miscellaneous
 fillarray:a - a-rate version of fillarray
+catarray - concatenate multiple arrays
 encode2 - encode two audio signals into a single audio signal 
 decode2 - decodes two audio signals from one encoded by encode2
 encode4 - encode 4 integers into a single integer
@@ -403,7 +407,7 @@ endop
 
 ;fillarray for audio vectors
 ;This opcode generates multiple overloaded versions of fillarray to handle mutltiple args for audio inputs.
-;note: the opcodes are only generated after instrument initialisation in the orchestra.       
+;note: the opcodes are only generated at performance time, after the first initialisation pass in the orchestra.
 opcode _cslc_fillarrayoload,0,i
   inumops xin
   iopndx = 1
@@ -436,7 +440,112 @@ opcode _cslc_fillarrayoload,0,i
     iopndx += 1
   od
 endop
+;;default is up to 16 arates
 _cslc_fillarrayoload 16 
+
+;;This UDO creates multiple overloaded `catarray` UDO's.
+;;_cslc_catarrayoload_i generates catarray for i-rate arrays.
+;;_cslc_catarrayoload_k generate catarray for k-rate arrays.
+;;Once created, the catarray UDO concatenates
+;;multiple 1d arrays into a single array..
+;;syntax:
+;;kres[] catarray k1[],k2[],k3[]... etc
+;;
+
+opcode _cslc_catarrayoload_i,0,i
+  inumops xin
+  iopndx = 2
+  while iopndx <= inumops do
+    icount = iopndx
+    indx = 1
+    Smaini sprintf {{    iresult[] init lenarray(iarr1) + lenarray(iarr2)
+    iargs = (iargs == -1 ? %d : iargs)
+    indx = 0
+    until indx = lenarray(iresult) do
+      if indx < lenarray(iarr1) then
+         iresult[indx] = iarr1[indx]
+      else
+         iresult[indx] = iarr2[indx - lenarray(iarr1)]
+      endif
+         indx += 1
+      od
+      iargs -= 1}},icount-1    
+    Sopln1 = "opcode catarray, i[],"
+    Sopln2 = ""
+    Soprecurse = {{
+       if iargs > 0 then
+          iresult[] catarray iresult,}}
+    until indx > icount do
+       Sopln1 strcat Sopln1, "i[]"
+       if indx < icount then
+	  Snewln2 sprintf "iarr%d[],",icount - indx
+          Sopln2 strcat Snewln2,Sopln2
+          Snewoprecurse sprintf "iarr%d,",limit(indx+2,0,icount)
+          Soprecurse strcat Soprecurse, Snewoprecurse 
+       else
+	  Snewln2 sprintf "iarr%d[],iargs xin\n",indx
+          Sopln2 strcat Sopln2,Snewln2
+          Snewoprecurse = "iargs\n      endif\n"
+          Soprecurse strcat Soprecurse, Snewoprecurse
+       endif
+       indx+=1
+    od
+    Sopheader sprintf "%s%s%s%s",Sopln1,"j\n    ",Sopln2,Smaini
+    Sopfooter sprintf "%sxout iresult \nendop\n",Soprecurse
+    Sfinal strcat Sopheader, Sopfooter
+    icomp compilestr Sfinal
+    iopndx += 1
+od
+endop  
+
+opcode _cslc_catarrayoload_k,0,i
+  inumops xin
+  iopndx = 2
+  while iopndx <= inumops do
+    icount = iopndx
+    indx = 1
+    Smaink sprintf {{    kresult[] init lenarray(karr1) + lenarray(karr2)
+    iargs = (iargs == -1 ? %d : iargs)
+    kndx = 0
+    until kndx = lenarray(kresult) do
+      if kndx < lenarray(karr1) then
+         kresult[kndx] = karr1[kndx]
+      else
+         kresult[kndx] = karr2[kndx - lenarray(karr1)]
+      endif
+         kndx += 1
+      od
+      iargs -= 1}},icount-1    
+    Sopln1 = "opcode catarray, k[],"
+    Sopln2 = ""
+    Soprecurse = {{
+       if iargs > 0 then
+          kresult[] catarray kresult,}}
+    until indx > icount do
+       Sopln1 strcat Sopln1, "k[]"
+       if indx < icount then
+	  Snewln2 sprintf "karr%d[],",icount - indx
+          Sopln2 strcat Snewln2,Sopln2
+          Snewoprecurse sprintf "karr%d,",limit(indx+2,0,icount)
+          Soprecurse strcat Soprecurse, Snewoprecurse 
+       else
+	  Snewln2 sprintf "karr%d[],iargs xin\n",indx
+          Sopln2 strcat Sopln2,Snewln2
+          Snewoprecurse = "iargs\n      endif\n"
+          Soprecurse strcat Soprecurse, Snewoprecurse
+       endif
+       indx+=1
+    od
+    Sopheader sprintf "%s%s%s%s",Sopln1,"j\n    ",Sopln2,Smaink
+    Sopfooter sprintf "%sxout kresult \nendop\n",Soprecurse
+    Sfinal strcat Sopheader, Sopfooter
+    icomp compilestr Sfinal
+    iopndx += 1
+od
+endop  
+;;Default is to generate catarray up to 12 args
+_cslc_catarrayoload_i 12
+_cslc_catarrayoload_k 12
 
 ;send audio signals in an instrument to the global audio array (ga_cslc_PatchArr)
 ;e.g. send fillarray(aLeft, aRight)
@@ -1235,7 +1344,6 @@ opcode truncatearray, k[],k[]kO
   xout kResult
 endop
 
-
 opcode truncatearray, i[],i[]io
   iArr[],ilen,iinc xin
   iResult[] init ilen
@@ -1249,42 +1357,6 @@ opcode truncatearray, i[],i[]io
     iinctrack += iinc
   od
   xout iResult
-endop
-;;;;;;;;;;;;;;;;
-;; From CSUDO repository - Joachim Heintz
-;;;;;;;;;;;;;;;;
-opcode ArrCat, i[], i[]i[]
- iArr1[], iArr2[] xin
- iLenOutArr = lenarray(iArr1) + lenarray(iArr2)
- iOutArr[] init iLenOutArr
- indx = 0
- while indx < lenarray(iArr1) do
-  iOutArr[indx] = iArr1[indx]
-  indx += 1
- od
- while indx < iLenOutArr do
-  iOutArr[indx] = iArr2[indx-lenarray(iArr1)]
-  indx += 1
- od
- xout iOutArr
-
-endop
-
-opcode ArrCat, k[], k[]k[]
- kArr1[], kArr2[] xin
- iLenOutArr = lenarray:i(kArr1) + lenarray:i(kArr2)
- kOutArr[] init iLenOutArr
- kndx = 0
- while kndx < lenarray(kArr1) do
-  kOutArr[kndx] = kArr1[kndx]
-  kndx += 1
- od
- while kndx < iLenOutArr do
-  kOutArr[kndx] = kArr2[kndx-lenarray(kArr1)]
-  kndx += 1
- od
- xout kOutArr
-
 endop
 
 ;weighted random choices from an array.
@@ -1461,6 +1533,32 @@ opcode dedupe, k[],k[]
    od
    xout kresult
 endop
+
+;;;concatenates 5x -rate arrays. Used in loopevent.
+;; Note that public versions of catarray are generated at performance time
+;; with the _cslc_catarrayoload UDO
+opcode _cslc_catarray, i[],i[]i[]i[]i[]i[]j
+    iarr1[],iarr2[],iarr3[],iarr4[],iarr5[],iargs xin
+    iresult[] init lenarray(iarr1) + lenarray(iarr2)
+    iargs = (iargs == -1 ? 4 : iargs)
+    indx = 0
+    until indx = lenarray(iresult) do
+      if indx < lenarray(iarr1) then
+         iresult[indx] = iarr1[indx]
+      else
+         iresult[indx] = iarr2[indx - lenarray(iarr1)]
+      endif
+         indx += 1
+      od
+      iargs -= 1
+       if iargs > 0 then
+          iresult[] _cslc_catarray iresult,iarr3,iarr4,iarr5,iarr5,iargs
+      endif
+xout iresult
+endop
+
+
+
 
 ;Given an array of select scale degrees,
 ;returns an array with 'in-between' degrees inserted.
@@ -2851,10 +2949,7 @@ opcode _cslc_loopmaster, 0, i[]i[]i[]pjppjo
   ipitlen lenarray ipits
   ilptmlen lenarray ilptms
   idividers[] fillarray ibaselen, ibaselen + ipitlen, ibaselen + ipitlen + ilptmlen
-  ibasenpits[] ArrCat ibaseArr, ipits
-  ibasepitslpts[] ArrCat ibasenpits, ilptms
-  ieventpfields[] ArrCat ibasepitslpts, ipfields
-  ieventsnd[] ArrCat ieventpfields,idividers
+  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ipfields,idividers
   Sschedchn sprintf "lpsched:%f",ieventsnd[0] 
   icurrentsched = chnget:i(Sschedchn)
   ischedtm = icurrentsched - now() - (2/kr)
@@ -2946,10 +3041,7 @@ opcode loopcode, 0, i[]iSpjo
   ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, limit(abs(itrig),0,1), irhgate,ipitdir,itonic,icodestrset,inextnsnce,inextprob
   ibaselen lenarray ibaseArr
   idividers[] fillarray ibaselen, ibaselen + 1, ibaselen + 1 + lenarray:i(ilptms)
-  ibasenpits[] ArrCat ibaseArr, ipits
-  ibasepitslpts[] ArrCat ibasenpits, ilptms
-  ieventpfields[] ArrCat ibasepitslpts, ipfields
-  ieventsnd[] ArrCat ieventpfields,idividers
+  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ipfields,idividers
   Sschedchn sprintf "lpsched:%f",ieventsnd[0]
   icurrentsched = chnget:i(Sschedchn)
   ischedtm = icurrentsched - now() - (1/kr)    
@@ -3037,7 +3129,7 @@ if (iinvert != -1) then
   else
     aenv    transegr itie, irisetm, itype, 1, 0, 0, 1, idectm, itype, 0
 endif
-xout ain * aenv         ; apply envelope and write output
+xout ain * aenv
 endop
 
 
@@ -3289,15 +3381,15 @@ endif
 endin
 schedule 299,0,-1
 
-;
+;Limiter and optional peak meter.
 instr 301
   kreset metro gkVUmonitorfreq
   aout1, aout2 monitor ;get audio from spout
   amax maxabs aout1, aout2
   kmax peak amax
   
-  ;;UNCOMMENT this printf line to use VUMeter in a terminal supporting ANSI Escape codes.
-  printf "\033[1G\033[0;32m****************\033[0;33m*********\033[0;31m|***\033[0m\033[%sG\033[0K\033[25G|", kreset,sprintfk("%d",int(kmax * 25))
+  ;;UNCOMMENT this printf line to see a peak meter in a terminal supporting ANSI Escape codes.
+  ;;printf "\033[1G\033[0;32m****************\033[0;33m*********\033[0;31m|***\033[0m\033[%sG\033[0K\033[25G|", kreset,sprintfk("%d",int(kmax * 25))
 
   if kreset == 1 then
     kmax = 0
