@@ -1,6 +1,6 @@
 <CsoundSynthesizer>
 <CsOptions>
--odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 ;--omacro:SOUNDLIB=Sounds.orc
+-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
 </CsOptions>
 <CsVersion>
 After 6.18
@@ -165,6 +165,9 @@ truncatearray - extend or trim an array
 wchoice - weighted choice selection
 rotatearray - permute an array
 dedupe - remove dulicates from an array
+slicearray_k - like slicearray with k-rate inputs
+poparray - returns item at index in an array, and the array with item removed.
+rndpick - get a random selection from an array, without duplicates. 
 cosr - returns a value in a cosine circle with resp[ect to the current time.
 linslide - control a channel value
 counterChan - increment a channel value
@@ -1027,6 +1030,114 @@ kArr[],ibeg,iend,istride xin
   kresult[] slicearray kArr, ibeg, iend, istride
 xout kresult
 endop
+
+;;slicearray with k-rate inputs
+opcode slicearray_k, k[],k[]kk
+  kArr[],kbeg,kend xin
+  kresult[] genarray kbeg, kend, 1
+  klen lenarray kresult
+  kresndx = 0
+  kndx = 0
+  until kndx > kend do
+    if kndx < kbeg then
+    ;;do nothing
+       kndx += 1
+    elseif kndx <= kend then
+      kresult[kresndx] = kArr[kndx]
+      kndx += 1
+      kresndx += 1
+    else
+      printf "slicearray_k shouldn't reach this condition\n",1
+    endif      
+  od
+xout kresult
+endop
+
+;Given an an array and an index value, returns an array with the item at index removed, and the value in the input array at index.
+opcode poparray, i[]i,i[]i
+  iinArr[],indx xin
+  iinlen lenarray iinArr
+  if indx >= iinlen then
+     ipopresult = 0
+     ipopArr[] init 1
+     prints "poparray error | index outof bounds\n"
+  else    
+    ipopresult = iinArr[indx]
+    ipopArr[] init iinlen - 1
+    ihead[] slicearray iinArr,0,indx-1
+    itail[] slicearray iinArr,indx+1, iinlen-1
+    icount = 0
+    until icount == lenarray(ipopArr) do
+      if icount < lenarray(ihead) then
+        ipopArr[icount] = ihead[icount]
+      else
+        ipopArr[icount] = itail[icount - lenarray(ihead)]
+      endif
+    icount += 1
+  od
+  endif
+    xout ipopArr,ipopresult
+endop
+
+opcode poparray, k[]k,k[]k
+  kinArr[],kndx xin
+  kinlen = lenarray:k(kinArr)
+  if kndx >= kinlen then
+     kpopresult = 0
+     kpopArr[] init 1
+     printf "poparray error | index out of bounds\n",1    
+  else
+    kpopresult = kinArr[kndx]
+    kpopArr[] genarray 1,lenarray:k(kinArr) - 1
+    khead[] slicearray_k kinArr,0,kndx-1
+    ktail[] slicearray_k kinArr,kndx+1, lenarray:k(kinArr)-1
+    kcount = 0
+    until kcount == lenarray:k(kpopArr) do
+      if kcount < lenarray:k(khead) then
+         kpopArr[kcount] = khead[kcount]
+      else
+         kpopArr[kcount] = ktail[kcount - lenarray:k(khead)]
+    endif
+      kcount += 1
+    od
+  endif
+  xout kpopArr,kpopresult
+endop
+
+;;returns an array, inum in length, of randomly selected items from an array.
+;;Each item is only selected once. The selection will not contain duplicates.
+opcode rndpick, i[],i[]i
+  iinarr[],inum xin
+  iresult[] init inum
+  if inum >= lenarray:i(iinarr) then
+    prints "randpick error | selection size to large for input array\n"
+  else
+    until inum == 0 do
+    indx = floor(unirand:i(lenarray:i(iinarr)-0.000001))
+    iinarr, ipopresult poparray iinarr,indx 
+    iresult[inum - 1] = ipopresult
+    inum -= 1
+    od
+  endif
+  xout iresult
+endop
+
+opcode rndpick, k[],k[]k
+  kinarr[],knum xin
+  kresult[] genarray 1,knum
+  if knum >= lenarray(kinarr) then
+    printf "randpick error | selection size to large for input array\n",1
+  else
+    until knum == 0 do
+      kndx = floor(unirand:k(lenarray:k(kinarr)-0.000001))
+      kinarr, kpopresult poparray kinarr,kndx
+      kresult[knum - 1] = kpopresult
+    knum -= 1
+    od
+  endif  
+  xout kresult
+endop
+
 
 ;Generates a scale of equidistant degrees per period, usable by the cpstun[i] opcode.
 ;insteps is number of steps in the scale.
@@ -3389,7 +3500,7 @@ instr 301
   kmax peak amax
   
   ;;UNCOMMENT this printf line to see a peak meter in a terminal supporting ANSI Escape codes.
-  ;;printf "\033[1G\033[0;32m****************\033[0;33m*********\033[0;31m|***\033[0m\033[%sG\033[0K\033[25G|", kreset,sprintfk("%d",int(kmax * 25))
+  printf "\033[1G\033[0;32m****************\033[0;33m*********\033[0;31m|***\033[0m\033[%sG\033[0K\033[25G|", kreset,sprintfk("%d",int(kmax * 25))
 
   if kreset == 1 then
     kmax = 0
