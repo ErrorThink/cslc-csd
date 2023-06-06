@@ -149,6 +149,9 @@ aouts fillarray aoutL, aoutR
 * `wchoice` - weighted choice selection
 * `rotatearray` - permute an array
 * `dedupe` - remove dulicates from an array
+* `slicearray_k` - like slicearray with k-rate inputs
+* `poparray` - returns item at index in an array, and the array with item removed.
+* `rndpick` - return a random selection from an array without duplicates.
 * `cosr` - returns a value in a cosine circle with resp[ect to the current time.
 * `linslide` - control a channel value
 * `counterChan` - increment a channel value
