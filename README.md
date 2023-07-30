@@ -69,6 +69,8 @@ Event generators produced score events.
 * `arpi` - generate score events from arrays of scale degrees and rhythms
 * `loopevent` - generate repeating score event cycles
 * `loopcode` - generate repeating cycles of arbitrary code.
+* `setnode` - redirect the recurse destination of a loopevent.
+
 
 #### PATCH UDO's for signal routing ####
 Patching routes audio between named instruments. Patch UDO's guide the path of audio between instruments.

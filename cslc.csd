@@ -83,6 +83,7 @@ chrdi - generate concurrant score events
 arpi - generate score events from arrays of scale degrees and rhythms
 loopevent - generate repeating score event cycles
 loopcode - generate repeating cycles of arbitrary code.
+setnode - redirect the recurse destination of a loopevent.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PATCH UDO's for signal routing
@@ -200,8 +201,11 @@ gk_cslc_clearupdate init 0
 ;gS_cslc_channelarr is used for clearing channels
 gS_cslc_channelarr[] init giMAXINSTR ;300
 ga_cslc_channelclear[] init giMAXINSTR ;zero's only
-;for loopplayers
-gi_cslc_Looprec[][] init giMAXINSTR, 50 ;
+;for looplayers
+
+gi_cslc_Looprec[][] init giMAXINSTR, 40 ;
+gi_cslc_LoopID[] init giMAXINSTR ; maps ID to looprow
+gi_cslc_loop_tally = -1
 
 gi_cslc_patchsig_inum = 5
 gi_cslc_clearsig_inum = 6
@@ -3042,33 +3046,43 @@ example:
 _cslc_loopmaster fillarray(n("Simpleosc")+0.3,0,0.7,0.2,0),fillarray(4,8),fillarray(1/2,1/4),-1,-1,1,1,4,0.5
 
 */
-opcode _cslc_loopmaster, 0, i[]i[]i[]pjppjo
-  ipfields[],ipits[],ilptms[],ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin  
+opcode _cslc_loopmaster, 0, i[]i[]i[]pjpp
+  ievent[],ipits[],ilptms[],ipoly,itonic,irhgate,ipitdir xin  
   iabtms[] abs ilptms
   ilptm sumarray iabtms
-  ievntinstr = ipfields[0]
-  iinstance = ievntinstr * 0.001
-  if frac(ievntinstr) == 0 then
-     id = ievntinstr
-  else
-     id = strtod(strsub(sprintf("%.5g",frac(ievntinstr)),2)) ;converts decimal portion to an instance ID
-  endif
+  id = ievent[0]
+  iinstance = id * 0.001
   iloopins = 10
   icodestrset = -1
-  ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, abs(ipoly), irhgate,ipitdir,itonic,icodestrset,inextnsnce,inextprob
+  iloopndx = 0
+  icurrentnstnce = 0 ;index in gi_cslc_Looprec for current loop.
+  inextnsnce = -1
+  inextprob = 1
+  ;now check if the id already exists
+  until iloopndx > gi_cslc_loop_tally do
+    if (gi_cslc_LoopID[iloopndx] == id) then
+      inextnsnce = gi_cslc_Looprec[iloopndx][10] 
+      inextprob = gi_cslc_Looprec[iloopndx][11]
+      igoto BREAKOUT
+    endif
+    iloopndx += 1    
+  od
+  BREAKOUT:
+  icurrentnstnce = iloopndx
+  ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, abs(ipoly), irhgate,ipitdir,itonic,icodestrset,icurrentnstnce,inextnsnce,inextprob
   ibaselen lenarray ibaseArr 
   ipitlen lenarray ipits
   ilptmlen lenarray ilptms
   idividers[] fillarray ibaselen, ibaselen + ipitlen, ibaselen + ipitlen + ilptmlen
-  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ipfields,idividers
+  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ievent,idividers
   Sschedchn sprintf "lpsched:%f",ieventsnd[0] 
   icurrentsched = chnget:i(Sschedchn)
   ischedtm = icurrentsched - now() - (2/kr)
   ieventsnd[2] = lenarray(ieventsnd)
-  if (inextnsnce != -1) then
-     printf_i "setting gi_cslc_Looprec at id %f\n",1,id
-     gi_cslc_Looprec setrow ieventsnd,id
-  endif
+  gi_cslc_Looprec setrow ieventsnd,iloopndx
+  gi_cslc_Looprec[iloopndx][4] = 1
+  gi_cslc_LoopID[iloopndx] = id
+  gi_cslc_loop_tally = iloopndx+1
   if ischedtm < 0 then
      ieventsnd[1] = nextbeat(iabtms[0])
   else
@@ -3077,108 +3091,156 @@ opcode _cslc_loopmaster, 0, i[]i[]i[]pjppjo
   if (ipoly == -1) then
      ;no sound
   else
-     schedule ieventsnd
+    schedule ieventsnd
   endif
 endop
 
-opcode loopevent, 0, i[]ppjppjo
-  ipfields[],ilptm,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin
+opcode loopevent, 0, i[]ppjpp
+  ipfields[],ilptm,ipoly,itonic,irhgate,ipitdir xin
   ilptms[] fillarray ilptm
   ipits[] fillarray 0
-  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob
+  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir
 endop
 
 ;k-rate launches the i-rate version
-opcode loopevent, 0, k[]ppjppjo
-  kpfields[],ilptm,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin
+opcode loopevent, 0, k[]ppjpp
+  kpfields[],ilptm,ipoly,itonic,irhgate,ipitdir xin
   ipfields[] = kpfields
   ilptms[] fillarray ilptm
   ipits[] fillarray 0
-  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob
+  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir
   endop  
 
-opcode loopevent, 0, i[]i[]pjppjo
-  ipfields[],ilptms[],ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin
+opcode loopevent, 0, i[]i[]pjpp
+  ipfields[],ilptms[],ipoly,itonic,irhgate,ipitdir xin
   ipits[] fillarray 0
-  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob
+  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic
   endop
 
-opcode loopevent, 0, k[]k[]pjppjo
-  kpfields[],klptms[],ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin
+opcode loopevent, 0, k[]k[]pjpp
+  kpfields[],klptms[],ipoly,itonic,irhgate,ipitdir xin
   ipfields[] = kpfields
   ilptms[] = klptms
   ipits[] fillarray 0
-  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob
+  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic
   endop
 
 
-opcode loopevent, 0, k[]k[]k[]pjppjo
-  kpfields[],kpits[],klptms[],ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin
+opcode loopevent, 0, k[]k[]k[]pjpp
+  kpfields[],kpits[],klptms[],ipoly,itonic,irhgate,ipitdir xin
   ipfields[] = kpfields
   ipits[] = kpits
   ilptms[] = klptms
-  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob
+  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir
   endop
 
-opcode loopevent, 0, i[]i[]i[]pjppjo
-  ipfields[],ipits[],ilptms[],ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin
-  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob
+opcode loopevent, 0, i[]i[]i[]pjpp
+  ipfields[],ipits[],ilptms[],ipoly,itonic,irhgate,ipitdir xin
+  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir
 endop
 
-opcode loopevent, 0, k[]k[]i[]pjppjo
-  kpfields[],kpits[],ilptms[],ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob xin
+opcode loopevent, 0, k[]k[]i[]pjpp
+  kpfields[],kpits[],ilptms[],ipoly,itonic,irhgate,ipitdir xin
   ipfields[] = kpfields
   ipits[] = kpits
-  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir,inextnsnce,inextprob
+  _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir
   endop
 
 
 ;;; loop arbitrary Csound code.
 ;;; limited to irate code (for now).
-opcode loopcode, 0, i[]iSpjo
-  ilptms[],instanceid,Scode,itrig,inextnsnce,inextprob xin
+opcode loopcode, 0, i[]iSp
+  ilptms[],instanceid,Scode,itrig xin  
   iabtms[] abs ilptms
   ilptm sumarray iabtms
   id = instanceid
   iinstance = instanceid * 0.001
   icodestrset = int(instanceid * 1000)
-  strset icodestrset, Scode
+  strset icodestrset, Scode  
   iloopins = 10
   itonic = 0
   irhgate = 1
-  ipitdir = 1 
+  ipitdir = 1
   ipits[] fillarray 0
-  ipfields[] fillarray instanceid, 0, 0.1, 0,0
-  ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, limit(abs(itrig),0,1), irhgate,ipitdir,itonic,icodestrset,inextnsnce,inextprob
-  ibaselen lenarray ibaseArr
-  idividers[] fillarray ibaselen, ibaselen + 1, ibaselen + 1 + lenarray:i(ilptms)
-  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ipfields,idividers
-  Sschedchn sprintf "lpsched:%f",ieventsnd[0]
+  ievent[] fillarray instanceid, 0, 0.1, 0,0
+  iloopndx = 0
+  icurrentnstnce = 0
+  inextnsnce = -1
+  inextprob = 1
+  until iloopndx > gi_cslc_loop_tally do
+    if (gi_cslc_LoopID[iloopndx] == id) then
+      inextnsnce = gi_cslc_Looprec[iloopndx][10] 
+      inextprob = gi_cslc_Looprec[iloopndx][11]
+      igoto BREAKOUT
+    endif
+    iloopndx += 1    
+  od
+  BREAKOUT:
+  icurrentnstnce = iloopndx
+  ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, limit(abs(itrig),0,1), irhgate,ipitdir,itonic,icodestrset,icurrentnstnce,inextnsnce,inextprob
+  ibaselen lenarray ibaseArr 
+  ipitlen lenarray ipits
+  ilptmlen lenarray ilptms
+  idividers[] fillarray ibaselen, ibaselen + ipitlen, ibaselen + ipitlen + ilptmlen
+  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ievent,idividers
+  Sschedchn sprintf "lpsched:%f",ieventsnd[0] 
   icurrentsched = chnget:i(Sschedchn)
-  ischedtm = icurrentsched - now() - (1/kr)    
-  if ischedtm < 0 then
-  ieventsnd[1] = nextbeat(iabtms[0])
-  else
-  ieventsnd[1] = ischedtm
-  endif
-
+  ischedtm = icurrentsched - now() - (2/kr)
   ieventsnd[2] = lenarray(ieventsnd)
-
-  if (inextnsnce != -1) then
-     printf_i "setting gi_cslc_Looprec at id %f\n",1,id
-     gi_cslc_Looprec setrow ieventsnd,id
+  gi_cslc_Looprec setrow ieventsnd,iloopndx
+  gi_cslc_Looprec[iloopndx][4] = 1
+  gi_cslc_LoopID[iloopndx] = id
+  gi_cslc_loop_tally = iloopndx+1  
+  if ischedtm < 0 then
+     ieventsnd[1] = nextbeat(iabtms[0])
+  else
+     ieventsnd[1] = tempodur(ischedtm)
   endif
   if (itrig == -1) then
      ;no sound
   else
-     schedule ieventsnd
+    schedule ieventsnd
+    printf_i "lpdebug | launching event %f with icurrentnstnce %f \n",1,ieventsnd[0],icurrentnstnce
+    ;printarray ieventsnd
   endif
 endop
 
-opcode loopcode, 0, k[]iSpjo
-  klptms[],instanceid,Scode,itrig,inextnsnce,inextprob xin
+opcode loopcode, 0, k[]iSp
+  klptms[],instanceid,Scode,itrig xin
   ilptms[] castarray klptms
-  loopcode ilptms,instanceid,Scode,itrig,inextnsnce,inextprob
+  loopcode ilptms,instanceid,Scode,itrig
+endop
+
+;;; For use with Loopevents
+;;; Redirects the recurse destination of a loopevent to another loopevent instance.
+;;; e.g. set loop ID 14 to recurse onto loop ID 16.2 with a 50% probability.
+;;; setnode 14,16.2,0.5
+;;;      And set loop ID 16 to recurse back to loop ID 14 with a 100% probability.
+;;; setnode 16.2,14,1
+opcode setnode,0,iip
+  inodesrc, inodedest, iprob xin
+  ;;get the index to gi_cslc_Looprec for each node
+  iloopndx = 0
+  isrcindex = -1
+  idestindex = -1    
+  until iloopndx > gi_cslc_loop_tally do
+    if (gi_cslc_LoopID[iloopndx] == inodesrc) then
+       isrcindex = iloopndx
+    endif
+    if (gi_cslc_LoopID[iloopndx] == inodedest) then
+       idestindex = iloopndx
+    endif
+    iloopndx += 1    
+  od
+  if (isrcindex == -1) || (idestindex == -1) then
+    printf_i "setnode : Tried to set invalid node | src = %f, dest = %f\n",1,isrcindex,idestindex
+  elseif gi_cslc_Looprec[isrcindex][2] == 0 || gi_cslc_Looprec[idestindex][2] == 0 then
+    printf_i "setnode : Missing event node at index | src = %f, dest = %f\n",1,isrcindex,idestindex
+  else
+    printf_i "setnode : Recurse node %f => %f \n",1, gi_cslc_LoopID[isrcindex], gi_cslc_LoopID[idestindex] 
+    gi_cslc_Looprec[isrcindex][10] = idestindex
+    gi_cslc_Looprec[isrcindex][11] = iprob
+  endif
 endop
 
 opcode schedcode,0,So
@@ -3377,75 +3439,70 @@ itonic = ipArr[7]
 icodeget = ipArr[8]
 irhgate = ipArr[5]
 ipitdir = ipArr[6]
-inextnsnce = ipArr[9]
-inextprob = ipArr[10]
+icurrentnstnce = ipArr[9] 
+inextnsnce = gi_cslc_Looprec[icurrentnstnce][10]  
+inextprob = gi_cslc_Looprec[icurrentnstnce][11]
 if (icodeget != -1) then
    Scode strget icodeget
 endif
-idivider1 = ipArr[lenarray(ipArr) - 3] ; 
-idivider2 = ipArr[lenarray(ipArr) - 2] ; 
-idivider3 = ipArr[lenarray(ipArr) - 1] ; 
+idivider1 = ipArr[lenarray(ipArr) - 3]
+idivider2 = ipArr[lenarray(ipArr) - 2] 
+idivider3 = ipArr[lenarray(ipArr) - 1] 
 ipitarray[] slicearray ipArr, idivider1, idivider2 - 1 
 ibeatArr[] slicearray ipArr, idivider2, idivider3 - 1
-ischedArr[] slicearray ipArr, idivider3, lenarray(ipArr) - 4 ;
+ischedArr[] slicearray ipArr, idivider3, lenarray(ipArr) - 4
 Slooprhid sprintf "rh%f", ischedArr[0]
 Spitid sprintf "pit%f", ischedArr[0]
 itonic = (itonic == -1 ? giTonic_ndx : itonic)
-;cggoto (ipoly == 0), NEXT ;;see the cggoto earlier
 if ipoly > 1 then
-   ;increments the index
-   if lenarray(ibeatArr) == 1 then
+    if lenarray(ibeatArr) == 1 then
       ialtrh = ibeatArr[0]
-   else
-   ialtrh = iterArr(ibeatArr, Slooprhid)
-   endif
-   iabsrh abs ialtrh
-   irhgatetest random 0,1
-   if iabsrh <= 2/kr then
+    else
+      ialtrh = iterArr(ibeatArr, Slooprhid)
+    endif
+    iabsrh abs ialtrh
+    irhgatetest random 0,1
+    if iabsrh <= 2/kr then
       ;do nothing
-   else
+    else
       ipitdeg = iterArr(ipitarray, Spitid,ipitdir) + ischedArr[4] + itonic
       ieventArr[] = ischedArr
       ieventArr[4] = cpstuni(ipitdeg, gi_CurrentScale)
-   endif
-   if irhgatetest >= irhgate then
+    endif
+    if irhgatetest >= irhgate then
       ;no sound
-   elseif ialtrh < 0 then
+    elseif ialtrh < 0 then
       ;negative rhythm is a rest
-   elseif (icodeget != -1) then
+    elseif (icodeget != -1) then
       icompres evalstr Scode
-   else
+    else
       schedule ieventArr
-   endif
-   ipArr[1] = iabsrh
-   Sschedchn sprintf "lpsched:%f", ipArr[0]
-   ;chnset now() + iabsrh, Sschedchn
-   inexttest random 0,1
-   if inextnsnce == -1 then
-       irecurse[] = ipArr
-   elseif inexttest >= inextprob then
-       irecurse[] = ipArr
-   else
-       inextArr[] getrow gi_cslc_Looprec,inextnsnce
-       inpcnt = inextArr[2]
-       if inpcnt == 0 then
-          printf_i "invalid instance found\n",1
-          igoto NEXT
-       else
-       irecurse[] slicearray inextArr,0,inpcnt - 1
-       irdiv2 = irecurse[lenarray(irecurse) - 2] ; 
-       irdiv3 = irecurse[lenarray(irecurse) - 1] ; 
-       irecbeats[] slicearray irecurse, irdiv2, irdiv3 - 1
-       Sreclooprhid sprintf "rh%f", irecurse[irdiv3]
-       irecurse[1] = irecbeats[chnget:i(Sreclooprhid) % lenarray(irecbeats)]
-       endif
-   endif
+    endif
+    ipArr[1] = iabsrh
+    Sschedchn sprintf "lpsched:%f", ipArr[0]
+    if chnget:i(Slooprhid) != (lenarray(ibeatArr) - 1) then
+      irecurse[] = ipArr
+    elseif inextprob < random:i(0,1) then
+      irecurse[] = ipArr
+    elseif gi_cslc_Looprec[icurrentnstnce][0] == 0 then
+      irecurse[] = ipArr
+    elseif gi_cslc_Looprec[icurrentnstnce][10] == -1 then
+      irecurse[] = ipArr
+     else
+      inextArr[] getrow gi_cslc_Looprec, inextnsnce
+      inextpcnt = inextArr[2]
+      irecurse[] slicearray inextArr,0,inextpcnt - 1
+      irdiv2 = irecurse[inextpcnt - 2] ; 
+      irdiv3 = irecurse[inextpcnt - 1] ; 
+      irecbeats[] slicearray irecurse, irdiv2, irdiv3 - 1
+      Sreclooprhid sprintf "rh%f", irecurse[irdiv3]
+      irecurse[1] = irecbeats[chnget:i(Sreclooprhid) % lenarray(irecbeats)]
+    endif
    irecurse[1] = nextbeat(irecurse[1])
    schedule irecurse
    chnset now() + irecurse[1], Sschedchn
 endif
 NEXT:
-;kpoly = ipArr[4] ;already set above
 if (kpoly == 1) then
     turnoff3 p1
     kpArr[] = ipArr 
