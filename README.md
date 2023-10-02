@@ -68,6 +68,7 @@ Event generators produced score events.
 * `chrdi` - generate concurrant score events
 * `arpi` - generate score events from arrays of scale degrees and rhythms
 * `loopevent` - generate repeating score event cycles
+* `loopctr` - generate repeating cycles of control signals
 * `loopcode` - generate repeating cycles of arbitrary code.
 * `setnode` - redirect the recurse destination of a loopevent.
 
@@ -147,7 +148,7 @@ aouts fillarray aoutL, aoutR
 * `ndxarray` - forgiving array indexing
 * `mono` - signals when a concurrant instance is active
 * `castarray`/`ca` - iarray to karray or vice versa 
-* `truncatearray` - extend or trim an array
+* `truncarray` - extend or trim an array
 * `wchoice` - weighted choice selection
 * `rotatearray` - permute an array
 * `dedupe` - remove dulicates from an array
@@ -162,5 +163,7 @@ aouts fillarray aoutL, aoutR
 * `walker` - Random walk
 * `randselect_i` - Select a random value fromthe argument list
 * `curve/curvek` - convex/concave curves
+* `midiroute` - route a midi channel to a named instrument
+
 
 Optional: See also cslc-mode, the emacs minor mode for live coding.
