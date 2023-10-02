@@ -611,7 +611,7 @@ endop
 opcode EQ,a,akk[] ;1 audio out, 1 audio in ;get k-rate data through chnget arguments
 al,kQ,keqArr[]	xin
 cggoto kQ == 1, bypass
-keqArrtrunc[] truncatearray keqArr, 9 
+keqArrtrunc[] truncarray keqArr, 9 
 abal = al
 
 aleq eqfil al,    75,  75,keqArrtrunc[0] * kQ
@@ -667,9 +667,9 @@ opcode mverb, aa, aakkkkkkk[]k
 ainL,ainR,kDFact,kFB,kmix,kER,kERamp,krmax,kresArr[],kdelclear xin
 ;a    a    k     k    k   k   k      k     k[]       k         
 if (lenarray(kresArr) == 25) then
-   kresArrtrunc[] truncatearray kresArr, 25
+   kresArrtrunc[] truncarray kresArr, 25
 else
-   kresArrtrunc[] truncatearray kresArr, 25, 1.414
+   kresArrtrunc[] truncarray kresArr, 25, 1.414
 endif
 
 aAU,aAR,aAD,aAL,
@@ -801,8 +801,8 @@ opcode movest,aa,aaai
    asrcL = asrc
    asrcR = asrc
 
-   adistL = sqrt(pow(imichalf,2) + pow(adist,2) - 2*imichalf*adist * cos(aang * ($M_PI/180)))
-   adistR = sqrt(pow(imichalf,2) + pow(adist,2) - 2*imichalf*adist * cos((180 - aang) * ($M_PI/180)))
+   adistL = sqrt(pow(imichalf,2) + pow(adist,2) - 2*imichalf*adist * cos((aang+90) * ($M_PI/180)))
+   adistR = sqrt(pow(imichalf,2) + pow(adist,2) - 2*imichalf*adist * cos((180 - (aang+90)) * ($M_PI/180)))
    adistL = limit(adistL,0.18,100)
    adistR = limit(adistR,0.18,100)
    adelL = 0.008 * adistL

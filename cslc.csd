@@ -1,6 +1,8 @@
 <CsoundSynthesizer>
 <CsOptions>
--odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
+;-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
+-odac8 --port=8099 --sample-rate=44100 --ksmps=1 --nchnls=2 --0dbfs=1 -B64 -b32 --nodisplays --messagelevel=1120 -Ma --omacro:SOUNDLIB=Sounds.orc
+
 </CsOptions>
 <CsVersion>
 After 6.18
@@ -82,6 +84,7 @@ orn - generate score events from arrays of intervals and rhythms
 chrdi - generate concurrant score events
 arpi - generate score events from arrays of scale degrees and rhythms
 loopevent - generate repeating score event cycles
+loopctr - generate repeating control signals
 loopcode - generate repeating cycles of arbitrary code.
 setnode - redirect the recurse destination of a loopevent.
 
@@ -162,7 +165,7 @@ randint - return a random integer in a range
 ndxarray - forgiving array indexing
 mono - signals when a concurrant instance is active
 castarray/ca - iarray to karray or vice versa 
-truncatearray - extend or trim an array
+truncarray - extend or trim an array
 wchoice - weighted choice selection
 rotatearray - permute an array
 dedupe - remove dulicates from an array
@@ -188,6 +191,8 @@ gk_tempo init 60
 gk_now init 0
 
 gkVUmonitorfreq init 12 ;frequency of the ANSI term vumeter updates.
+
+massign 0,0
 
 seed 0
 ;;;
@@ -304,6 +309,13 @@ gi_CurrentScale ftgen 0,0,128,-2,7, 2,    263, 0,
 gkTonic_ndx init 0  ;index of the tonic in gi_CurrentScale
 giTonic_ndx = 0  ;might be better than krate
 gi_midikeyref = 60
+gi_midipb_amount = 1
+
+;works like massign with a named instrument.
+opcode midiroute,0,iS
+   ichan, Sinsname xin
+  tableiw nstrnum(Sinsname),limit:i(ichan-1,0,16),gi_midichanmap   
+endop
 
 ;;_cslc_taberror returns the index of the nearest value in a table that matches ival.
 ;;also returns the deviation (the error) of the table value to ival
@@ -1439,27 +1451,13 @@ opcode ca, i[],k[]
    xout iArr
 endop 
 
-;truncatearray, shorten or extend an array.
+;truncarray, shorten or extend an array.
 ;when extending, values in the input array are
 ;repeated until k/ilen is reached.
 ;optional argument sums an increment to each element.
 ;Good for introducing variations when extending.
-opcode truncatearray, k[],k[]kO
-  kArr[],klen,kinc xin
-  kResult[] init i(klen)
-  kndx = 0
-  kval = 0
-  kinctrack = kinc
-  until (kndx >= klen) do
-    kval = kArr[kndx % lenarray(kArr)]
-    kResult[kndx] = kval + kinctrack
-    kndx += 1
-    kinctrack += kinc
-  od
-  xout kResult
-endop
 
-opcode truncatearray, i[],i[]io
+opcode truncarray, i[],i[]io
   iArr[],ilen,iinc xin
   iResult[] init ilen
   indx = 0
@@ -1474,18 +1472,35 @@ opcode truncatearray, i[],i[]io
   xout iResult
 endop
 
+
+opcode truncarray, k[],k[]kO
+  kArr[],klen,kinc xin
+  kResult[] init i(klen)
+  kndx = 0
+  kval = 0
+  kinctrack = kinc
+  until (kndx >= klen) do
+    kval = kArr[kndx % lenarray(kArr)]
+    kResult[kndx] = kval + kinctrack
+    kndx += 1
+    kinctrack += kinc
+  od
+  xout kResult
+endop
+
+
 ;weighted random choices from an array.
 ;The first array (kchoices[]) is the selection of values
 ;the second array (kweights) specifies relative probability of selecting
 ;the values in kchoices at the same indices.
-;note that kweights will match the length of kchoices using the truncatearray opcode.
+;If kweights does not match the length of kchoices, kweights is truncated or extended through repetition. 
 opcode wchoice, i,k[]k[]
 kchoices[], kweights[]xin
   iweightsa[] castarray kweights
   ichoices[] castarray kchoices
   ilen lenarray ichoices
   indx = 0
-  iweights[] truncatearray iweightsa, ilen
+  iweights[] truncarray iweightsa, ilen
   isum _cslc_sumarray2 iweights
   irnd random 0, isum
   iupto = 0
@@ -1502,8 +1517,6 @@ kchoices[], kweights[]xin
   RESULT:
   xout ic
 endop
-
-;;for 
 
 ;returns an array of differences between values in an array.
 ;e.g. _cslc_arraydeltas(fillarray(2,3,2,1))
@@ -1540,15 +1553,14 @@ od
 xout ioutArr
 endop
 
-;;
+;;shift values in an array ishift indices to the right (if positive), or left (if negative).
+;;values dropping off one end wrap around to the other.
 opcode rotatearray, i[],i[]i
 iinArr[], ishift  xin
-
 ilen lenarray iinArr
 ioutArr[] init ilen
 indx = 0
 until (indx == ilen) do
-;    ioutArr[indx] = iinArr[(indx + ishift) % ilen]
     ioutArr[indx] = ndxarray(iinArr, (indx + ishift))
     indx += 1
 od
@@ -2143,7 +2155,7 @@ terminate:
 xout kcurrent
 endop
 
-;;a version which rotates an array on each call. Uses a channel name as a unique ID.
+;;a version of rotatearray which rotates on each call. Uses a channel name as a unique ID.
 opcode rotatearray, k[],k[]Sp
 kinArr[], Sid,iincr xin
 klen init lenarray(kinArr)
@@ -2156,6 +2168,7 @@ until (kndx == klen) do
 od
 xout koutArr
 endop
+
 
 ;returns successive values in an array on every call
 ;Sid is a string (any unique string), to store the state of each instance.
@@ -3023,8 +3036,6 @@ endop
 ;;             event                        pitches          rhythm
 ;; loopevent array(12.1, 0, 1, 0.6, 0), array(0,3,6,2), array(1/4,1/8,1/8), 1  
 ;;;;;;;;;;;;;;;;;
-
-;wrapper for krate arrays (because inline arrays default to krate) 
 ;usage
 /*
 ipfields[] - array containing score event pfields
@@ -3053,7 +3064,7 @@ opcode _cslc_loopmaster, 0, i[]i[]i[]pjpp
   id = ievent[0]
   iinstance = id * 0.001
   iloopins = 10
-  icodestrset = -1
+  icodestrset = 0 ;changed from -1
   iloopndx = 0
   icurrentnstnce = 0 ;index in gi_cslc_Looprec for current loop.
   inextnsnce = -1
@@ -3082,7 +3093,7 @@ opcode _cslc_loopmaster, 0, i[]i[]i[]pjpp
   gi_cslc_Looprec setrow ieventsnd,iloopndx
   gi_cslc_Looprec[iloopndx][4] = 1
   gi_cslc_LoopID[iloopndx] = id
-  gi_cslc_loop_tally = iloopndx+1
+  gi_cslc_loop_tally = max:i(gi_cslc_loop_tally, iloopndx+1)
   if ischedtm < 0 then
      ieventsnd[1] = nextbeat(iabtms[0])
   else
@@ -3095,6 +3106,7 @@ opcode _cslc_loopmaster, 0, i[]i[]i[]pjpp
   endif
 endop
 
+;;; loopevent UDO's are wrappers for _cslc_loopmaster
 opcode loopevent, 0, i[]ppjpp
   ipfields[],ilptm,ipoly,itonic,irhgate,ipitdir xin
   ilptms[] fillarray ilptm
@@ -3146,15 +3158,88 @@ opcode loopevent, 0, k[]k[]i[]pjpp
   _cslc_loopmaster ipfields,ipits,ilptms,ipoly,itonic,irhgate,ipitdir
   endop
 
-
-;;; loop arbitrary Csound code.
-;;; limited to irate code (for now).
-opcode loopcode, 0, i[]iSp
-  ilptms[],instanceid,Scode,itrig xin  
+;;;;; 
+;; Recursively loop k-rate control signals in a channel 
+;;;;;
+opcode loopctr, 0,Sii[]poooo
+  Schan,idest,ilptms[],itrig,initreset,initval,itype,ist xin
+  instanceid = _cslc_find(Schan,gS_cslc_ActiveChans)
+  if instanceid == -1 then
+    instanceid = _cslc_updateActiveChans(Schan)    
+  endif
+  if initreset == 0 then
+     initval chnget Schan
+  endif  
   iabtms[] abs ilptms
   ilptm sumarray iabtms
   id = instanceid
-  iinstance = instanceid * 0.001
+  iinstance = instanceid * 0.00001
+  icodestrset = int(instanceid * 1000)
+  strset icodestrset, Schan
+  iloopins = 10
+  itonic = 0
+  irhgate = 1
+  ipitdir = 1
+  ipits[] fillarray 0
+  ievent[] fillarray 3, 0, 1, idest, ist, itype,initval,instanceid
+  iloopndx = 0
+  icurrentnstnce = 0
+  inextnsnce = -1
+  inextprob = 1
+  until iloopndx > gi_cslc_loop_tally do
+    if (gi_cslc_LoopID[iloopndx] == id) then
+      inextnsnce = gi_cslc_Looprec[iloopndx][10] 
+      inextprob = gi_cslc_Looprec[iloopndx][11]
+      igoto BREAKOUT
+    endif
+    iloopndx += 1    
+  od
+  BREAKOUT:
+  icurrentnstnce = iloopndx
+  ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, limit(abs(itrig),0,1), irhgate,ipitdir,itonic,-icodestrset,icurrentnstnce,inextnsnce,inextprob
+  ibaselen lenarray ibaseArr 
+  ipitlen lenarray ipits
+  ilptmlen lenarray ilptms
+  idividers[] fillarray ibaselen, ibaselen + ipitlen, ibaselen + ipitlen + ilptmlen
+  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ievent,idividers
+  Sschedchn sprintf "lpsched:%f",ieventsnd[0] 
+  icurrentsched = chnget:i(Sschedchn)
+  ischedtm = icurrentsched - now() - (2/kr)
+  ieventsnd[2] = lenarray(ieventsnd)
+  gi_cslc_Looprec setrow ieventsnd,iloopndx
+  gi_cslc_Looprec[iloopndx][4] = 1
+  gi_cslc_LoopID[iloopndx] = id
+  gi_cslc_loop_tally = max:i(gi_cslc_loop_tally, iloopndx+1)  
+  if ischedtm < 0 then
+     ieventsnd[1] = nextbeat(iabtms[0])
+  else
+     ieventsnd[1] = tempodur(ischedtm)
+  endif
+  if (itrig == -1) then
+     ;no sound
+  else
+    schedule ieventsnd
+  endif
+endop
+
+opcode loopctr, 0,Sik[]poooo
+  Schan,idest,klptms[],itrig,initreset,initval,itype,ist xin
+  ilptms[] castarray klptms
+  loopctr Schan,idest,ilptms,itrig,initreset,initval,itype,ist
+endop
+
+;;; loop arbitrary Csound code.
+;;; limited to irate code (for now).
+opcode loopcode, 0, i[]SSp
+  ilptms[],Sid,Scode,itrig xin  
+  iabtms[] abs ilptms
+  ilptm sumarray iabtms
+  instanceid = _cslc_find(Sid,gS_cslc_ActiveChans)
+  if instanceid == -1 then
+    instanceid = _cslc_updateActiveChans(Sid)    
+  endif  
+  id = instanceid
+  iinstance = instanceid * 0.00001
   icodestrset = int(instanceid * 1000)
   strset icodestrset, Scode  
   iloopins = 10
@@ -3190,7 +3275,7 @@ opcode loopcode, 0, i[]iSp
   gi_cslc_Looprec setrow ieventsnd,iloopndx
   gi_cslc_Looprec[iloopndx][4] = 1
   gi_cslc_LoopID[iloopndx] = id
-  gi_cslc_loop_tally = iloopndx+1  
+  gi_cslc_loop_tally = max:i(gi_cslc_loop_tally, iloopndx+1)  
   if ischedtm < 0 then
      ieventsnd[1] = nextbeat(iabtms[0])
   else
@@ -3200,23 +3285,26 @@ opcode loopcode, 0, i[]iSp
      ;no sound
   else
     schedule ieventsnd
-    printf_i "lpdebug | launching event %f with icurrentnstnce %f \n",1,ieventsnd[0],icurrentnstnce
-    ;printarray ieventsnd
   endif
 endop
 
-opcode loopcode, 0, k[]iSp
-  klptms[],instanceid,Scode,itrig xin
+opcode loopcode, 0, k[]SSp
+  klptms[],Sid,Scode,itrig xin
   ilptms[] castarray klptms
-  loopcode ilptms,instanceid,Scode,itrig
+  loopcode ilptms,Sid,Scode,itrig
 endop
 
+;;; setnode
 ;;; For use with Loopevents
 ;;; Redirects the recurse destination of a loopevent to another loopevent instance.
+;;; inodesrc - the loop instance ID of the source
+;;; inodedest - the loop instance ID of the destination
+;;; iprob - if iprob <= 1, iprob is the probability the sourcenode loop recurses onto the destnode (e.g 0.5 is 50% of the time, 1 is every time).
+;;;       - if iprob > 1, then inodesrc will repeat iprob times before recursing to inodedest.
 ;;; e.g. set loop ID 14 to recurse onto loop ID 16.2 with a 50% probability.
 ;;; setnode 14,16.2,0.5
-;;;      And set loop ID 16 to recurse back to loop ID 14 with a 100% probability.
-;;; setnode 16.2,14,1
+;;;      And set loop ID 16 to recurse back to loop ID 14 after 4 loop repeats.
+;;; setnode 16.2,14,4
 opcode setnode,0,iip
   inodesrc, inodedest, iprob xin
   ;;get the index to gi_cslc_Looprec for each node
@@ -3240,6 +3328,9 @@ opcode setnode,0,iip
     printf_i "setnode : Recurse node %f => %f \n",1, gi_cslc_LoopID[isrcindex], gi_cslc_LoopID[idestindex] 
     gi_cslc_Looprec[isrcindex][10] = idestindex
     gi_cslc_Looprec[isrcindex][11] = iprob
+    Ssrcnoderepeats sprintf "srcnodereps:%f", gi_cslc_Looprec[isrcindex][0]
+    printf_i "Setting chan %s to %f\n",1,Ssrcnoderepeats,iprob 
+    chnset iprob, Ssrcnoderepeats 
   endif
 endop
 
@@ -3360,28 +3451,41 @@ if (kstop == 1) then
 endif
 endin
 
+
 ;;midi routing instrument
 ;;uncomment instantiation below only if MIDI is connected.
 instr 4
 kstatus, kchan, kdata1, kdata2 midiin
-printf "kstatus= %d, kchan = %d, kdata1 = %d, kdata2=%d\n", kstatus+1, kstatus, kchan, kdata1, kdata2
+kbend init 0  
 kchan = (kchan == 0 ? 1 : kchan)
-kins table kchan - 1, gi_midichanmap 
+kins table kchan - 1, gi_midichanmap
 if (kstatus == 128 || (kstatus == 144 && kdata2 == 0)) then
+    ;;printf "NOTEOFF: note = %d ch = %d\n", rnd:k(1), kdata1, kchan    
     turnoff2 kins+(kdata1*0.001),4,1			
 elseif (kstatus == 144) then
+    ;;printf "NOTEON: note = %d, vel = %d, ch = %d\n", rnd:k(1), kdata1, kdata2, kchan
     kamp ampmidicurve kdata2, 1, 0.5
-    event "i", kins + (kdata1 * 0.001), 0, -1, kamp, cpstun3(kdata1 - gi_midikeyref, gi_CurrentScale); may need to change 60 
-else
-   printf "other message ---> kstatus= %d, kchan = %d, kdata1 = %d, kdata2=%d\n", kstatus+1, kstatus, kchan, kdata1, kdata2
-   ;extra stuff 
+    event "i", kins + (kdata1 * 0.001), 0, -1, kamp, cpstun3(kdata1 - gi_midikeyref, gi_CurrentScale); may need to change 60
+elseif (kstatus == 224) then
+    Smidi_pb_channel sprintfk "midi_pb:%d",kchan    
+    chnset (((kdata2 * 128) + kdata1 - 8192) / 8192) * gi_midipb_amount,Smidi_pb_channel
+    ;;printf "%s = %f\n", rnd:k(1), Smidi_pb_channel,(((kdata2 * 128) + kdata1 - 8192) / 8192) * gi_midipb_amount
+    printf "%s\n", kstatus, Smidi_pb_channel
+elseif (kstatus == 0) then
+    ;;  do nothing
+else    
+    Smidi_control_channel sprintfk "midi_cc:%d:%d",kdata1,kchan
+    chnset kdata2/127, Smidi_control_channel
+    ;;printf "%s = %f\n", kstatus+1, Smidi_control_channel,kdata2/127
+    printf "%s %d\n", kdata1, Smidi_control_channel,kstatus        
 endif
 endin
 ;only call if midi connected. Crashes otherwise
-;schedule 4, 0, -1
+schedule 4, 0, -1
+
 ;; A hack to predefine instrument numbers, and avoice errors in midi assignment
-;;instr 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115
-;; endin
+instr 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116
+endin
 
 ;;;;;;;;;;PATCHING INSTRUMENTS;;;;;;;;;;;;;;;;
 instr 5
@@ -3427,7 +3531,7 @@ instr 9
 endin
 
 
-;;for the loopevent and loopcode opcodes.
+;;Recursive instrument for the loopevent, loopcode and loopctr opcodes.
 instr 10
 ipcnt pcount
 ipArr[] passign
@@ -3442,8 +3546,8 @@ ipitdir = ipArr[6]
 icurrentnstnce = ipArr[9] 
 inextnsnce = gi_cslc_Looprec[icurrentnstnce][10]  
 inextprob = gi_cslc_Looprec[icurrentnstnce][11]
-if (icodeget != -1) then
-   Scode strget icodeget
+if (icodeget != 0) then
+   Scode strget abs(icodeget)
 endif
 idivider1 = ipArr[lenarray(ipArr) - 3]
 idivider2 = ipArr[lenarray(ipArr) - 2] 
@@ -3464,6 +3568,16 @@ if ipoly > 1 then
     irhgatetest random 0,1
     if iabsrh <= 2/kr then
       ;do nothing
+    elseif icodeget < 0 then
+      instndx = ischedArr[7]
+      idest = ischedArr[3]
+      idel = ischedArr[4]
+      ist = nextbeat(idel) ;default is nextbeat(1)
+      iendreset = 1
+      initval = ischedArr[6]
+      itype = ischedArr[5]
+      Sout sprintf "i3 %f %f \"%s\" %f %f %f %f %d", ist, iabsrh, Scode, idest, itype, iendreset, initval, instndx
+      scoreline_i Sout      
     else
       ipitdeg = iterArr(ipitarray, Spitid,ipitdir) + ischedArr[4] + itonic
       ieventArr[] = ischedArr
@@ -3473,8 +3587,11 @@ if ipoly > 1 then
       ;no sound
     elseif ialtrh < 0 then
       ;negative rhythm is a rest
-    elseif (icodeget != -1) then
+    elseif (icodeget > 0) then
       icompres evalstr Scode
+      ;evaluate if icodeget is positive
+    elseif (icodeget < 0) then
+      ;we've already launched linslide
     else
       schedule ieventArr
     endif
@@ -3484,11 +3601,14 @@ if ipoly > 1 then
       irecurse[] = ipArr
     elseif inextprob < random:i(0,1) then
       irecurse[] = ipArr
+    elseif inextprob > 1 then
+      gi_cslc_Looprec[icurrentnstnce][11] = inextprob - 1
+      irecurse[] = ipArr
     elseif gi_cslc_Looprec[icurrentnstnce][0] == 0 then
       irecurse[] = ipArr
     elseif gi_cslc_Looprec[icurrentnstnce][10] == -1 then
       irecurse[] = ipArr
-     else
+    else
       inextArr[] getrow gi_cslc_Looprec, inextnsnce
       inextpcnt = inextArr[2]
       irecurse[] slicearray inextArr,0,inextpcnt - 1
@@ -3497,6 +3617,11 @@ if ipoly > 1 then
       irecbeats[] slicearray irecurse, irdiv2, irdiv3 - 1
       Sreclooprhid sprintf "rh%f", irecurse[irdiv3]
       irecurse[1] = irecbeats[chnget:i(Sreclooprhid) % lenarray(irecbeats)]
+      Ssrcnoderepeats sprintf "srcnodereps:%f", gi_cslc_Looprec[icurrentnstnce][0]
+      isrcnp = chnget:i(Ssrcnoderepeats)
+      if isrcnp > 1 then
+        gi_cslc_Looprec[icurrentnstnce][11] = isrcnp
+      endif
     endif
    irecurse[1] = nextbeat(irecurse[1])
    schedule irecurse
@@ -3578,6 +3703,10 @@ instr 302
 ares oscils 0.5, A4*2, 0
 out ares, ares
 endin
+
+;fill index zero in Active Chans. 
+i_cslc_unused = _cslc_updateActiveChans("_unused-ndx0")
+
 printf_i "finished loading cslc.csd %f\n", 1, 1
 
 #ifdef SOUNDLIB
