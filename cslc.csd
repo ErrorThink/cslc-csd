@@ -1,7 +1,7 @@
 <CsoundSynthesizer>
 <CsOptions>
 ;-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
--odac8 --port=8099 --sample-rate=44100 --ksmps=1 --nchnls=2 --0dbfs=1 -B64 -b32 --nodisplays --messagelevel=1120 -Ma --omacro:SOUNDLIB=Sounds.orc
+-odac8 --port=8099 --sample-rate=48000 --ksmps=32 --nchnls=2 --0dbfs=1 -B512 -b64 --nodisplays --messagelevel=1120 -Ma --omacro:SOUNDLIB=Sounds.orc
 
 </CsOptions>
 <CsVersion>
@@ -98,7 +98,7 @@ In this context 'Source' Intruments send audio to the patch system using the 'se
 Syntax:
 patchsig Ssource, SDestination [,ilevel]
 patchchain Spatharray[] [,ilevel]
-patchspread Ssource, SDestinationarray[] [,ilevel]
+patchspread Ssource, SDestinationarray[] [,ilevels[]]
 send asig
 send asig1,asig2
 send asigs[]o
@@ -111,6 +111,7 @@ Spatharray[] (In patchchain) -- Spatharray is a string array of Instrument and/o
                                 Patchchain seqentially applies patchsig to each element in the array in series. 
                                 Audio is routed between each instrument/effect from the beginning of the array to the end. 
   				While the first element can be a either a source instrument or an Effect, subsequent elements must be effects (with inputs).
+ilevel/ilevels[] -- amplitude multipliers applied to patches.
 Example:
 instr myoscil
 asig oscil p4,p5
@@ -175,12 +176,12 @@ rndpick - get a random selection from an array, without duplicates.
 cosr - returns a value in a cosine circle with resp[ect to the current time.
 linslide - control a channel value
 counterChan - increment a channel value
+find - get index position of stored channel
 iterArr - yield the next value in an array on successive calls.
 seesaw - oscillate between two values
 walker - Random walk
 randselect_i - Select a random value fromthe argument list
 curve/curvek - convex/concave curves
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Optional: See also cslc-mode, the emacs minor mode for live coding.
@@ -253,6 +254,9 @@ gi12coul_12afn ftgen 0,0,64,-2, 12, 2, 263, 0,
 gi_31edo ftgen 0,0,64,-2, 31, 2, 263, 0,\
 1, 2^(1/31) ,2^(2/31),2^(3/31),2^(4/31),2^(5/31),2^(6/31),2^(7/31),2^(8/31),2^(9/31),2^(10/31),2^(11/31),2^(12/31),2^(13/31),2^(14/31),2^(15/31),2^(16/31),2^(17/31),2^(18/31),2^(19/31),2^(20/31),2^(21/31),2^(22/31),2^(23/31),2^(24/31),2^(25/31),2^(26/31),2^(27/31),2^(28/31),2^(29/31),2^(30/31),2
 
+gi_31secors ftgen 0,0,64,-2,31,2,263,0,\
+1.0000000,1.0212285,1.0496388,1.0697421,1.0924511,1.1228428,1.1443481,1.1686409,1.2011522,1.2241573,1.2501443,1.2849230,1.3095326,1.3373320,1.3745362,1.4008621,1.4306003,1.4703992,1.4985612,1.5303734,1.5729479,1.6030739,1.6371048,1.6826486,1.7148756,1.7512799,1.8000000,1.8344746,1.8734178,1.9255357,1.9624147,2.0000000
+
 ;Some interval arrays
 gk12majormode[] array 2,2,1,2,2,2,1
 gi12majormode[] array 2,2,1,2,2,2,1
@@ -261,8 +265,8 @@ gk17neutralmode[] array 3,2,3,2,2,3,2
 gi31Diatonic[] array 5,5,3,5,5,5,3
 gk31Diatonic[] array 5,5,3,5,5,5,3
 gi31NaturalMinor[] array 5,3,5,5,3,5,5
-gi31DiaDom7[] array 5,5,3,5,5,2,6
-gi31MinDom7[] array 5,3,5,5,3,4,6
+gi31DiaDom7[] array 5,5,2,5,5,3,6
+gi31MinDom7[] array 5,2,6,5,2,5,6
 gi31Neutral[] array 4,5,4,5,4,5,4
 gi31Diminished[] array 4,2,6,4,2,6,7
 ;more than 7 notes!
@@ -315,6 +319,13 @@ gi_midipb_amount = 1
 opcode midiroute,0,iS
    ichan, Sinsname xin
   tableiw nstrnum(Sinsname),limit:i(ichan-1,0,16),gi_midichanmap   
+endop
+;;;;;
+;; schedule evaluation of arbitrary code
+;;;
+opcode schedcode,0,So
+Scode,itime xin
+schedule 1,itime,1,Scode 
 endop
 
 ;;_cslc_taberror returns the index of the nearest value in a table that matches ival.
@@ -422,6 +433,14 @@ opcode _cslc_find,i,SS[]
   od
 BREAK:
 xout iresult
+endop
+
+;;a convenience wrapper for cslc_find.
+;;Returns the position index in gS_cslc_ActiveChans for the stored channel.
+opcode find,i,S
+  Schan xin
+  iresult _cslc_find Schan, gS_cslc_ActiveChans
+  xout iresult
 endop
 
 ;fillarray for audio vectors
@@ -565,6 +584,44 @@ endop
 ;;Default is to generate catarray up to 12 args
 _cslc_catarrayoload_i 12
 _cslc_catarrayoload_k 12
+
+;;fillarray_i
+;;outputs an iarray
+;;i[] fillarray_i k1,k2,k3...
+opcode _cslc_fillarray_ioload,0,i
+  inumops xin
+  iopndx = inumops
+  until iopndx == 0 do
+    icount = iopndx
+    indx = 1
+    Sopln1 = {{
+    opcode fillarray_i, i[],}}
+    Sopln2 = ""
+    Sbody1 sprintf "iArr[] init %d\n",icount
+    until indx > icount do
+       Sopln1 strcat Sopln1, "K"
+       if indx < icount then
+	  Snewln2 sprintf "kin%d,",icount - indx - 1
+	  Sopln2 strcat Snewln2,Sopln2
+       else
+	  Snewln2 sprintf "kin%d xin\n",icount - 1
+	  Sopln2 strcat Sopln2,Snewln2
+       endif
+       Sbody2 sprintf "iArr[%d] = i(kin%d)\n", indx - 1, indx - 1
+       Sbody1 strcat Sbody1, Sbody2
+       indx+=1
+    od
+    Sopheader sprintf "%s%s%s%s",Sopln1,"\n",Sopln2,Sbody1
+    Sopfooter = {{xout iArr
+    endop
+    }}
+    Sfinal strcat Sopheader, Sopfooter
+    icomp compilestr Sfinal
+    iopndx -= 1
+  od
+endop
+;;
+_cslc_fillarray_ioload 32
 
 ;send audio signals in an instrument to the global audio array (ga_cslc_PatchArr)
 ;e.g. send fillarray(aLeft, aRight)
@@ -793,17 +850,17 @@ until ioldndx < 0 do
 od
 endop
 
-opcode patchspread, 0,SS[]p
-Ssrc, Sdests[],ilevel xin
-;prints "\n\nEntering Patchspread\n\n"
+
+opcode patchspread, 0,SS[]i[]
+Ssrc, Sdests[],ilevels[] xin
 isrc nstrnum Ssrc
 isrcchans = _cslc_getSrcNumOuts(Ssrc)
 isrcselect = 0
 isdestlen lenarray Sdests
+ilevlen lenarray ilevels  
 idestchanarr[] init isdestlen
 idestchan = 0
 iwalkdests = 0
-;prints "\n\nPatchspread 0\n\n"
 while (iwalkdests < isdestlen) do
   Sd = Sdests[iwalkdests]
   idnum = _cslc_getDestNumIns(Sd)
@@ -821,11 +878,13 @@ idchanndx = 0
 while (ipatchndx < ipatchexpected) do
   isrcselect = wrap:i(ipatchndx,0,isrcchans) ;select source
   idselect = wrap:i(idestndx,0,isdestlen)
+  ilevselect = wrap:i(idselect,0,ilevlen)  
   Sdname = Sdests[idselect]
+  ilevel = ilevels[ilevselect]  
   idestchan = idchanndx
   SDestchan sprintf "%s:%d",Sdname,idestchan
   iencoded = encode4(isrc,isrcselect,imaxpatches,0)
-  ienc = gi_cslc_patchsig_inum + (iencoded / 10^7)
+  ienc = gi_cslc_patchsig_inum + (iencoded / 10^7)  
   printf_i "Patching %s:%d (instance %f) => Destchan %s\n",1,Ssrc,isrcselect,ienc, SDestchan
   schedule ienc, 0, -1, SDestchan, ilevel,imaxpatches * -1
   irecresult _cslc_recordpatch ienc  
@@ -852,10 +911,24 @@ until ioldndx < 0 do
       turnoff2_i gi_cslc_patchsig_inum+(instnce / 10^7),4,1
       _cslc_removepatch(gi_cslc_patchsig_inum+(instnce / 10^7))
    else
-      ;printf_i "\n\n**** found %f, doing nothing *** \n\n",1,instnce
+      ;do nothing
    endif
    ioldndx -= 1
 od
+endop
+
+;;;patchspread wrapper. krate array for level input.
+opcode patchspread, 0,SS[]k[]
+  Ssrc, Sdests[],klevels[] xin
+  ilevels[] = klevels
+  patchspread Ssrc, Sdests,ilevels
+endop
+
+;;;patchspread wrapper. A single irate level applied to all patches. 
+opcode patchspread, 0,SS[]p
+  Ssrc, Sdests[],ilevel xin
+  ilevels[] fillarray ilevel
+  patchspread Ssrc, Sdests,ilevels
 endop
 
 opcode patchchain,0,S[]p
@@ -1120,41 +1193,6 @@ opcode poparray, k[]k,k[]k
   xout kpopArr,kpopresult
 endop
 
-;;returns an array, inum in length, of randomly selected items from an array.
-;;Each item is only selected once. The selection will not contain duplicates.
-opcode rndpick, i[],i[]i
-  iinarr[],inum xin
-  iresult[] init inum
-  if inum >= lenarray:i(iinarr) then
-    prints "randpick error | selection size to large for input array\n"
-  else
-    until inum == 0 do
-    indx = floor(unirand:i(lenarray:i(iinarr)-0.000001))
-    iinarr, ipopresult poparray iinarr,indx 
-    iresult[inum - 1] = ipopresult
-    inum -= 1
-    od
-  endif
-  xout iresult
-endop
-
-opcode rndpick, k[],k[]k
-  kinarr[],knum xin
-  kresult[] genarray 1,knum
-  if knum >= lenarray(kinarr) then
-    printf "randpick error | selection size to large for input array\n",1
-  else
-    until knum == 0 do
-      kndx = floor(unirand:k(lenarray:k(kinarr)-0.000001))
-      kinarr, kpopresult poparray kinarr,kndx
-      kresult[knum - 1] = kpopresult
-    knum -= 1
-    od
-  endif  
-  xout kresult
-endop
-
-
 ;Generates a scale of equidistant degrees per period, usable by the cpstun[i] opcode.
 ;insteps is number of steps in the scale.
 ;ibasefreq and ibasekey correspond to the cpstun opcode documentation.  
@@ -1411,7 +1449,7 @@ elseif (iexists > -1) then
 endif
 knstid table iexists, gi_cslc_nstance_cnt
 if (knstid != instid) then
-   koff = 1
+    koff = 1
 endif
 xout koff
 endop
@@ -1456,7 +1494,6 @@ endop
 ;repeated until k/ilen is reached.
 ;optional argument sums an increment to each element.
 ;Good for introducing variations when extending.
-
 opcode truncarray, i[],i[]io
   iArr[],ilen,iinc xin
   iResult[] init ilen
@@ -1488,12 +1525,69 @@ opcode truncarray, k[],k[]kO
   xout kResult
 endop
 
+;;returns an array, inum in length, of randomly selected items from an array.
+;;Each item is only selected once.
+;;The selection will not contain duplicates if inum is less than the length of iinarray
+opcode rndpick, i[],i[]i
+  iinarr[],inum xin
+  iresult[] init inum
+  if inum >= lenarray:i(iinarr) then
+    iinarr[] truncarray iinarr,inum+1
+  endif
+  until inum == 0 do
+    indx = floor(unirand:i(lenarray:i(iinarr)-0.000001))
+    iinarr, ipopresult poparray iinarr,indx 
+    iresult[inum - 1] = ipopresult
+    inum -= 1
+  od
+  ;endif
+  xout iresult
+endop
+
+opcode rndpick, k[],k[]k
+  kinarr[],knum xin
+  kresult[] genarray 1,knum
+  if knum >= lenarray(kinarr) then
+     kinarr[] truncarray kinarr,knum+1
+  endif
+  until knum == 0 do
+  kndx = floor(unirand:k(lenarray:k(kinarr)-0.000001))
+  kinarr, kpopresult poparray kinarr,kndx
+  kresult[knum - 1] = kpopresult
+  knum -= 1
+  od
+  ;endif  
+  xout kresult
+endop
+
 
 ;weighted random choices from an array.
 ;The first array (kchoices[]) is the selection of values
 ;the second array (kweights) specifies relative probability of selecting
 ;the values in kchoices at the same indices.
-;If kweights does not match the length of kchoices, kweights is truncated or extended through repetition. 
+;If kweights does not match the length of kchoices, kweights is truncated or extended through repetition.
+opcode wchoice, i,i[]i[]
+ichoices[], iweightsa[] xin
+  ilen lenarray ichoices
+  indx = 0
+  iweights[] truncarray iweightsa, ilen
+  isum _cslc_sumarray2 iweights
+  irnd random 0, isum
+  iupto = 0
+  until (indx >= ilen) do
+    ic = ichoices[indx]
+    iw = iweights[indx % lenarray(iweights)]
+    if ((iupto + iw) >= irnd) then
+      igoto RESULT
+    else
+      iupto += iw
+    endif
+    indx += 1
+  od
+  RESULT:
+  xout ic
+endop
+
 opcode wchoice, i,k[]k[]
 kchoices[], kweights[]xin
   iweightsa[] castarray kweights
@@ -1830,16 +1924,31 @@ tableiw table:i(2, isuperscale), 2, idestifn ;base freq
 tableiw table:i(3, isuperscale), 3, idestifn ;key ctr
 
 indx = 0
-until (indx == ilen) do
-  isortedndx = isorted[indx]
-  irevisedval table isortedndx + 4, isuperscale
-  tableiw irevisedval, indx + 4, idestifn
-  if (irevisedval == imodularval) then
-      iscalekeyctrndx = indx
+;; until (indx == ilen) do
+;;   isortedndx = isorted[indx]
+;;   irevisedval table isortedndx + 4, isuperscale
+;;   tableiw irevisedval, indx + 4, idestifn
+;;   if (irevisedval == imodularval) then
+;;       iscalekeyctrndx = indx
+;;   endif
+;;   indx += 1
+;; od
+until (indx == inumgrades+1) do
+  if indx < ilen then
+     isortedndx = isorted[indx]
+     irevisedval table isortedndx + 4, isuperscale
+     tableiw irevisedval, indx + 4, idestifn
+     if (irevisedval == imodularval) then
+         iscalekeyctrndx = indx
+     endif
+  else
+     tableiw 0, indx + 4, idestifn
   endif
   indx += 1
 od
-tableiw table:i(4,idestifn)    * ilastvalfromsuper, ilen + 4, idestifn
+
+  
+tableiw table:i(4,idestifn) * ilastvalfromsuper, ilen + 4, idestifn
 
 giTonic_ndx = iscalekeyctrndx
 
@@ -1915,28 +2024,43 @@ endop
 
 ;31edo version
 opcode scalemode31, 0, io
-;wrapper just for the 31edo mode matrix
+;wrapper just for the 31secors mode matrix
 ;imode 0=default, 3=DiaDom7, 4=MinDom7, 1=Diatonic, 2=Minor,5=Diminished,6=neutral,7=Orwell[9]
 idegree, imode  xin
 if (imode == 0) then
-  scalemode gi_31edo, idegree, _cslc_get2dArr(idegree, gi_cslc_31Modes)
+  ichromatic[] fillarray 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1  
+  scalemode gi_31secors, idegree, ichromatic
 elseif (imode == 3) then
-  scalemode gi_31edo, idegree, gi31DiaDom7
+  scalemode gi_31secors, idegree, gi31DiaDom7
 elseif (imode == 4) then
-  scalemode gi_31edo, idegree, gi31MinDom7
+  scalemode gi_31secors, idegree, gi31MinDom7
 elseif (imode == 1) then
-  scalemode gi_31edo, idegree, gi31Diatonic
+  scalemode gi_31secors, idegree, gi31Diatonic
 elseif (imode == 2) then
-  scalemode gi_31edo, idegree, gi31NaturalMinor
+  scalemode gi_31secors, idegree, gi31NaturalMinor
 elseif (imode == 5) then
-  scalemode gi_31edo, idegree, gi31Diminished
+  scalemode gi_31secors, idegree, gi31Diminished
 elseif (imode == 6) then
-  scalemode gi_31edo, idegree, gi31Neutral
+  scalemode gi_31secors, idegree, gi31Neutral
 elseif (imode == 7) then
-  scalemode gi_31edo, idegree, gi31Orwell
+    scalemode gi_31secors, idegree, gi31Orwell
+elseif (imode == 8) then
+    iharmonics[] fillarray 8,7,6,5,4,3,2,1    
+  scalemode gi_31secors, idegree, iharmonics    
 else
-  scalemode gi_31edo, idegree, _cslc_get2dArr(idegree, gi_cslc_31Modes)
+  scalemode gi_31secors, idegree, _cslc_get2dArr(idegree, gi_cslc_31Modes)
 endif
+endop
+
+opcode scalemode31, 0, iS
+  idegree,Smode xin
+  SArr[] fillarray "chromatic","major","minor","M7","m7","dim","neutral","orwell","harmonic"
+  imode _cslc_find Smode, SArr
+  if imode != -1 then
+    scalemode31 idegree,imode
+  else
+    printf_i "scalemode31 error: unknown mode\n",1
+  endif 
 endop
 
 ;Get the current time
@@ -2828,6 +2952,89 @@ opcode orn, 0, k[]k[]k[]k[]k[]k[]k[]k[]k[]k[]ioo
   iorndur, ipitbound, iscale xin
   _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(kp9), ca(kp10), iorndur, ipitbound, iscale
 endop
+;;;;;;;;;;;irate versions
+;2 arrays and constant (i) rhythm
+opcode orn, 0, i[]ii[]ioo
+  ioriginal[], \
+  iwhen, iintervals[], \
+  iorndur, ipitbound, iscale xin
+  iwhens[] fillarray iwhen
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, iempty, iempty, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+endop
+
+;3 arrays = original, whens, intervals only, durs and amps constant
+opcode orn, 0, i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], iintervals[], \
+  iorndur, ipitbound, iscale xin
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, iempty, iempty, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+endop
+
+;4 arrays = original, whens, amps, intervals only - durs are constant
+opcode orn, 0, i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], iamps[], iintervals[], \
+  iorndur, ipitbound, iscale xin
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, iempty, iamps, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+endop
+
+;p5
+opcode orn, 0, i[]i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], idurs[], iamps[], iintervals[], \
+  iorndur, ipitbound, iscale xin
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+endop
+
+
+;p6
+opcode orn, 0, i[]i[]i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], idurs[], iamps[], iintervals[], ip6[], \
+  iorndur, ipitbound, iscale xin
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+endop
+
+;p7
+opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], \
+  iorndur, ipitbound, iscale xin
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, iempty, iempty, iempty, iorndur, ipitbound, iscale
+endop
+
+;p8
+opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], \
+  iorndur, ipitbound, iscale xin
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, iempty, iempty, iorndur, ipitbound, iscale
+endop
+
+;p9
+opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], ip9[], \
+  iorndur, ipitbound, iscale xin
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, ip9, iempty, iorndur, ipitbound, iscale
+endop
+
+;p10
+opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], ip9[], ip10[], \
+  iorndur, ipitbound, iscale xin
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, ip9, ip10, iorndur, ipitbound, iscale
+endop
+
 
 ;chrdi quick chords. koriginal holds the pfields on an event. (limit of 10 pfields)
 ;kintervals specifies concurrant pitches with that event.
@@ -2836,52 +3043,147 @@ endop
 ;iautoinvert constrains pitches to pitch classes within the octaves spanned by kintervals (centred on the iautoinvert scale degree).
 ;For example, kintervals = array(4,6,8), and iautoinvert = 0 in a diatonic major scale, then pitches 1,4,6 are generated. Defaults to -1 (no inversion).
 ;uses cpstun for pitches, with scale specified by kscale (defaults to gi_CurrentScale)
-opcode chrdi,0,k[]k[]oojo
-koriginal[],kintervals[],idbdamp,insincr,iautoinvert,iscale xin
-  ioriginal[] castarray koriginal
-  iintervals[] castarray kintervals
-  indx      =      0                           
-  insincr = (ioriginal[2] < 0 ? 0.01 : (insincr == 1 ? 0.01 : insincr))
+
+;iofftime turns off the newest note after n seconds. default is -1 == no turnoff.
+;; old interface
+;; opcode chrdi,0,i[]i[]oojo
+;; ioriginal[],iintervals[],idbdamp,insincr,iautoinvert,iscale xin
+
+;; opcode chrdi,0,i[]i[]ojjoo
+;;   ioriginal[],iintervals[],idbdamp,iautoinvert,iturnofftm,insincr,iscale xin
+;;   indx      =      0
+;;   ioriginsnum = ioriginal[0]
+;;   iorigdur = ioriginal[2]
+;;   insincr = (iorigdur < 0 ? 0.01 : (insincr == 1 ? 0.01 : insincr))
+;;   iscale    =  (iscale == 0 ? gi_CurrentScale : iscale)
+;;   ipitval = 0
+;;   ilen lenarray iintervals
+;;   iplen lenarray ioriginal
+;;   ievamp = (ioriginal[3] < 0 ? ampdbfs(ioriginal[3]):ioriginal[3]) 
+;;   iampfac = ampdbfs(log2(max(1,ilen)) * idbdamp); drop idbdamp db every doubling of instances
+;;   idur    =  iorigdur
+;;   if (iautoinvert != -1) then
+;;      ioctdegs = table(0,iscale)
+;;      imininterval = minarray:i(iintervals)
+;;      imaxinterval = maxarray:i(iintervals)
+;;   endif
+;;   ;;schedcode {{turnoff2_i n("strings"),10,1}},2 - works but should be optional.
+;;   until (indx >= ilen) do
+;;     ipitval   =  ioriginal[4] + iintervals[indx]
+;;     if (iautoinvert != -1) then
+;;         ipitval = wrap(ipitval,
+;;               (floor(imininterval / ioctdegs) * ioctdegs + iautoinvert),
+;;               (ceil(imaxinterval / ioctdegs) * ioctdegs + iautoinvert))
+;;     endif
+;;     if (iplen == 5) then
+;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+;;                       cpstuni(ipitval,iscale)
+;;     elseif (iplen == 6) then
+;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+;;                       cpstuni(ipitval,iscale), ioriginal[5]
+;;     elseif (iplen == 7) then
+;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+;;                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6]
+;;     elseif (iplen == 8) then
+;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+;;                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7]
+;;     elseif (iplen == 9) then
+;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+;;                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8]
+;;     elseif (iplen == 10) then
+;;     ;printf_i "p1 = %f\n",1, signum(ioriginal[0]) * (abs(ioriginal[0]) + ((indx + 1) * insincr))
+;;     event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+;;       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
+;;     endif
+;;   indx      +=        1
+;;   od
+;; endop
+
+;; opcode chrdi,0,k[]k[]oojo
+;; koriginal[],kintervals[],idbdamp,insincr,iautoinvert,iscale xin
+;;   ioriginal[] castarray koriginal
+;;   iintervals[] castarray kintervals
+;;   chrdi ioriginal,iintervals,idbdamp,insincr,iautoinvert,iscale  
+;; endop
+
+opcode chrdi,0,i[]i[]ooooo
+  ioriginal[],iintervals[],idbdamp,iturnofftm,iautoinvert,insincr,iscale xin
+  indx      =      0
+  ioriginsnum = abs(ioriginal[0])
+  iinsnumsig signum ioriginal[0]
+  iorigst = ioriginal[1]
+  iorigdur = ioriginal[2]
+  insincr = (iorigdur < 0 ? 0.01 : (insincr == 1 ? 0.01 : insincr))
   iscale    =  (iscale == 0 ? gi_CurrentScale : iscale)
   ipitval = 0
   ilen lenarray iintervals
   iplen lenarray ioriginal
   ievamp = (ioriginal[3] < 0 ? ampdbfs(ioriginal[3]):ioriginal[3]) 
   iampfac = ampdbfs(log2(max(1,ilen)) * idbdamp); drop idbdamp db every doubling of instances
-  idur    =  ioriginal[2]
-  if (iautoinvert != -1) then
-     ioctdegs = table(0,iscale)
-     imininterval = minarray:i(iintervals)
-     imaxinterval = maxarray:i(iintervals)
+  ioctdegs = table(0,iscale)
+  iminterval minarray iintervals
+  if iinsnumsig == -1 then
+    turnoff2_i ioriginsnum,0,1 
+  elseif iturnofftm > 0 then
+    Sturnoff sprintf "turnoff2_i %d,2,1",ioriginsnum
+    schedcode Sturnoff,iturnofftm ; turns off the most recent instance after iturnofftm
+  elseif iturnofftm < 0 then
+    Sturnoff sprintf "turnoff2_i %d,1,1",ioriginsnum      
+    schedcode Sturnoff,iturnofftm ; turns off the oldest instance after iturnofftm
   endif
+  ioctspread = 0 
   until (indx >= ilen) do
+    ishift = (iminterval + ioriginal[4] < 0 ? iminterval + ioriginal[4] : 0)
+    ishiftoct = 0
+    ishiftamount = 0
     ipitval   =  ioriginal[4] + iintervals[indx]
-    if (iautoinvert != -1) then
-        ipitval = wrap(ipitval,
-              (floor(imininterval / ioctdegs) * ioctdegs + iautoinvert),
-              (ceil(imaxinterval / ioctdegs) * ioctdegs + iautoinvert))
+    if (iautoinvert != 0) then
+       if ishift < 0 then
+          until ishift >= 0 do
+            ishift += ioctdegs
+            ishiftoct += 1
+          od
+         ishiftamount = (ishiftoct * ioctdegs)
+         inewp4 = ioriginal[4] + ishiftamount
+         inewintervals[] = iintervals + ishiftamount
+         ipitval   =  ioriginal[4] + inewintervals[indx]
+       endif
+    endif    
+    ipitval = ipitval + (ioctdegs * ioctspread)
+    if (iautoinvert != 0) then
+       ipitval = wrap(ipitval,floor(inewp4 / ioctdegs) * ioctdegs,
+                         ceil((inewp4+0.001) / ioctdegs) * ioctdegs * iautoinvert)
     endif
+    ioctspread = wrap(ioctspread + 1,0,iautoinvert)
+    ipitval = ipitval - ishiftamount
     if (iplen == 5) then
-      event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipitval,iscale)
     elseif (iplen == 6) then
-      event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipitval,iscale), ioriginal[5]
     elseif (iplen == 7) then
-      event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6]
     elseif (iplen == 8) then
-      event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7]
     elseif (iplen == 9) then
-      event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8]
     elseif (iplen == 10) then
-      event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
-                      cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
+    event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
     endif
   indx      +=        1
   od
+endop
+
+opcode chrdi,0,k[]k[]ooooo
+koriginal[],kintervals[],idbdamp,iturnofftm,iautoinvert,insincr,iscale xin
+  ioriginal[] castarray koriginal
+  iintervals[] castarray kintervals
+  chrdi ioriginal,iintervals,idbdamp,iautoinvert,iturnofftm,insincr,iscale
 endop
 
 
@@ -2899,28 +3201,20 @@ endop
 ;         Steepness of the curve increases as iampfac approaches 1 (or -1).
 ;         expected range is 0 to +-1, default is 0 (no modification applied).
 
-opcode arpi, 0, k[]k[]k[]k[]iopo
-  koriginal[],kintervals[],konsets[],kampmults[],idur,ievdur, ionsetfac, iampfac xin
-  ioriginal[] castarray koriginal
-  iintervals[] castarray kintervals
-  ionsets[] castarray konsets
-  iampmults[] castarray kampmults
+opcode arpi, 0, i[]i[]i[]i[]iopo
+  ioriginal[],iintervals[],ionsets[],iampmults[],idur,ievdur, ionsetfac, iampfac xin
   indx = 0
   ionce = 0
-
   iscale = gi_CurrentScale
   ipitval = 0
-
   ilen lenarray iintervals
   iamplen lenarray iampmults
   iplen lenarray ioriginal
   ionsetlength lenarray ionsets
-  
   ikdur  = ioriginal[2]
   ionset = ioriginal[1]
   ionsetprogress = 0
   inextonset = 0
-
   ; initialise kampfac: negative values == fade in, + == fade out, 0 == no change
   iampmode = iampfac
   if (iampfac == 0) then
@@ -2940,7 +3234,7 @@ opcode arpi, 0, k[]k[]k[]k[]iopo
   endif
       
  ;;BEGIN LOOP
-  until (ionset > (idur * (i(gk_tempo) / 60))) do
+  until (ionset > (tempodur(idur) * (i(gk_tempo) / 60))) do
 
   ipitval   =  ioriginal[4] + iintervals[indx % ilen]
 
@@ -2993,32 +3287,48 @@ opcode arpi, 0, k[]k[]k[]k[]iopo
   if (iampmode == 0) then
   iampfac = 1
   elseif (iampmode > 0) then
-
     if (iampmode > 0.5) then
       iampfac pow (1 - ionsetprogress), rescale(iampmode, 0, 1, 1, 5), 1
     else
       iampfac pow (1 - ionsetprogress), (iampmode * 2), 1
     endif
-
   else
-
     if (abs(iampmode) > 0.5) then
       iampfac pow ionsetprogress, rescale(abs(iampmode), 0, 1, 1, 5), 1
     else
       iampfac pow ionsetprogress, (abs(iampmode) * 2), 1
     endif
-
   endif
   indx      +=        1
   od
+endop
 
+opcode arpi, 0, k[]k[]k[]k[]iopo
+  koriginal[],kintervals[],konsets[],kampmults[],idur,ievdur, ionsetfac, iampfac xin
+  ioriginal[] castarray koriginal
+  iintervals[] castarray kintervals
+  ionsets[] castarray konsets
+  iampmults[] castarray kampmults
+  arpi ioriginal, iintervals, ionsets, iampmults,idur,ievdur, ionsetfac, iampfac  
 endop
 
 ;wrapper 
 opcode arpi, 0, k[]k[]k[]iopo
   koriginal[],kintervals[],konsets[],idur,ievdur, ionsetfac, iampfac xin
-  arpi koriginal, kintervals, konsets, array(1),idur,ievdur, ionsetfac, iampfac
+  ioriginal[] castarray koriginal
+  iintervals[] castarray kintervals
+  ionsets[] castarray konsets
+  iampmults[] fillarray 1  
+  arpi ioriginal, iintervals, ionsets, iampmults,idur,ievdur, ionsetfac, iampfac
 endop
+
+;wrapper 
+opcode arpi, 0, i[]i[]i[]iopo
+  iamparr[] fillarray 1
+  ioriginal[],iintervals[],ionsets[],idur,ievdur, ionsetfac, iampfac xin
+  arpi ioriginal, iintervals, ionsets, iamparr,idur,ievdur,ionsetfac,iampfac
+endop
+
 
 ;;;;;;;;;;;;;;;
 ;;loopevent opcode
@@ -3294,6 +3604,13 @@ opcode loopcode, 0, k[]SSp
   loopcode ilptms,Sid,Scode,itrig
 endop
 
+opcode loopcode, 0, iSSp
+  ilptm,Sid,Scode,itrig xin
+  ilptms[] fillarray ilptm
+  loopcode ilptms,Sid,Scode,itrig
+endop
+
+
 ;;; setnode
 ;;; For use with Loopevents
 ;;; Redirects the recurse destination of a loopevent to another loopevent instance.
@@ -3334,10 +3651,13 @@ opcode setnode,0,iip
   endif
 endop
 
-opcode schedcode,0,So
-Scode,itime xin
-schedule 1,itime,1,Scode 
+opcode setnode,0,SSp
+  Snodesrc, Snodedest, iprob xin
+  isrc = _cslc_find(Snodesrc,gS_cslc_ActiveChans)
+  idest = _cslc_find(Snodedest,gS_cslc_ActiveChans)
+  setnode isrc, idest, iprob
 endop
+
 
 ;;Effect construction
 opcode EffectConstruct, 0,SSiip

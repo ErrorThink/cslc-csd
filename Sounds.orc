@@ -369,10 +369,12 @@ opcode audiotabler, a, j
 endop
 
 
+
 instr grainfxchanins
 if mono()==1 then
     turnoff
 endif
+  
 itabaudio = p4
 asig chnget "grainfxchan"
 
