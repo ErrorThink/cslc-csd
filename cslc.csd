@@ -85,7 +85,7 @@ chrdi - generate concurrant score events
 arpi - generate score events from arrays of scale degrees and rhythms
 loopevent - generate repeating score event cycles
 loopctr - generate repeating control signals
-loopcode - generate repeating cycles of arbitrary code.
+loopcode - generate repeating execution of arbitrary code.
 setnode - redirect the recurse destination of a loopevent.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -173,7 +173,8 @@ dedupe - remove dulicates from an array
 slicearray_k - like slicearray with k-rate inputs
 poparray - returns item at index in an array, and the array with item removed.
 rndpick - get a random selection from an array, without duplicates. 
-cosr - returns a value in a cosine circle with resp[ect to the current time.
+roundfrac - round to a fraction
+cosr - returns a value in a cosine circle with respect to the current time.
 linslide - control a channel value
 counterChan - increment a channel value
 find - get index position of stored channel
@@ -2475,6 +2476,17 @@ xout iresult
   
 endop  
 
+;round to nearest fraction
+opcode roundfrac,i,ii
+   inum, inxt xin
+   inum = (inum % inxt == 0 ? inum + 0.00001:inum)
+   idenom = 1/inxt
+   ia = inum * idenom
+   ib = round(ia)
+   ic = divz(ib,idenom,0)
+   xout ic
+endop
+
 ;a wrapper around a power curve really. 
 ;ipower < 0.5 = convex fast to approach 1
 ;ipower > 0.5 - concave slow to approach 1
@@ -3045,67 +3057,7 @@ endop
 ;uses cpstun for pitches, with scale specified by kscale (defaults to gi_CurrentScale)
 
 ;iofftime turns off the newest note after n seconds. default is -1 == no turnoff.
-;; old interface
-;; opcode chrdi,0,i[]i[]oojo
-;; ioriginal[],iintervals[],idbdamp,insincr,iautoinvert,iscale xin
-
-;; opcode chrdi,0,i[]i[]ojjoo
-;;   ioriginal[],iintervals[],idbdamp,iautoinvert,iturnofftm,insincr,iscale xin
-;;   indx      =      0
-;;   ioriginsnum = ioriginal[0]
-;;   iorigdur = ioriginal[2]
-;;   insincr = (iorigdur < 0 ? 0.01 : (insincr == 1 ? 0.01 : insincr))
-;;   iscale    =  (iscale == 0 ? gi_CurrentScale : iscale)
-;;   ipitval = 0
-;;   ilen lenarray iintervals
-;;   iplen lenarray ioriginal
-;;   ievamp = (ioriginal[3] < 0 ? ampdbfs(ioriginal[3]):ioriginal[3]) 
-;;   iampfac = ampdbfs(log2(max(1,ilen)) * idbdamp); drop idbdamp db every doubling of instances
-;;   idur    =  iorigdur
-;;   if (iautoinvert != -1) then
-;;      ioctdegs = table(0,iscale)
-;;      imininterval = minarray:i(iintervals)
-;;      imaxinterval = maxarray:i(iintervals)
-;;   endif
-;;   ;;schedcode {{turnoff2_i n("strings"),10,1}},2 - works but should be optional.
-;;   until (indx >= ilen) do
-;;     ipitval   =  ioriginal[4] + iintervals[indx]
-;;     if (iautoinvert != -1) then
-;;         ipitval = wrap(ipitval,
-;;               (floor(imininterval / ioctdegs) * ioctdegs + iautoinvert),
-;;               (ceil(imaxinterval / ioctdegs) * ioctdegs + iautoinvert))
-;;     endif
-;;     if (iplen == 5) then
-;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
-;;                       cpstuni(ipitval,iscale)
-;;     elseif (iplen == 6) then
-;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
-;;                       cpstuni(ipitval,iscale), ioriginal[5]
-;;     elseif (iplen == 7) then
-;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
-;;                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6]
-;;     elseif (iplen == 8) then
-;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
-;;                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7]
-;;     elseif (iplen == 9) then
-;;       event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
-;;                       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8]
-;;     elseif (iplen == 10) then
-;;     ;printf_i "p1 = %f\n",1, signum(ioriginal[0]) * (abs(ioriginal[0]) + ((indx + 1) * insincr))
-;;     event_i     "i", ioriginal[0] + ((indx + 1) * insincr), tempodur(ioriginal[1]), tempodur(idur), ievamp*iampfac,\
-;;       cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
-;;     endif
-;;   indx      +=        1
-;;   od
-;; endop
-
-;; opcode chrdi,0,k[]k[]oojo
-;; koriginal[],kintervals[],idbdamp,insincr,iautoinvert,iscale xin
-;;   ioriginal[] castarray koriginal
-;;   iintervals[] castarray kintervals
-;;   chrdi ioriginal,iintervals,idbdamp,insincr,iautoinvert,iscale  
-;; endop
-
+;;sorts chord before playing. Works better for tied notes.
 opcode chrdi,0,i[]i[]ooooo
   ioriginal[],iintervals[],idbdamp,iturnofftm,iautoinvert,insincr,iscale xin
   indx      =      0
@@ -3131,7 +3083,8 @@ opcode chrdi,0,i[]i[]ooooo
     Sturnoff sprintf "turnoff2_i %d,1,1",ioriginsnum      
     schedcode Sturnoff,iturnofftm ; turns off the oldest instance after iturnofftm
   endif
-  ioctspread = 0 
+  ioctspread = 0
+  ipitvals[] init ilen
   until (indx >= ilen) do
     ishift = (iminterval + ioriginal[4] < 0 ? iminterval + ioriginal[4] : 0)
     ishiftoct = 0
@@ -3156,26 +3109,33 @@ opcode chrdi,0,i[]i[]ooooo
     endif
     ioctspread = wrap(ioctspread + 1,0,iautoinvert)
     ipitval = ipitval - ishiftamount
+    ipitvals[indx] = ipitval
+    indx      +=        1
+  od
+  ipvsorted[] sorta ipitvals
+  ipvsndx = 0
+  until ipvsndx == lenarray(ipvsorted) do
+    ipvsval = ipvsorted[ipvsndx] 
     if (iplen == 5) then
-      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
-                      cpstuni(ipitval,iscale)
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+                      cpstuni(ipvsval,iscale)
     elseif (iplen == 6) then
-      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
-                      cpstuni(ipitval,iscale), ioriginal[5]
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+                      cpstuni(ipvsval,iscale), ioriginal[5]
     elseif (iplen == 7) then
-      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
-                      cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6]
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+                      cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6]
     elseif (iplen == 8) then
-      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
-                      cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7]
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+                      cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7]
     elseif (iplen == 9) then
-      event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
-                      cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8]
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+                      cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8]
     elseif (iplen == 10) then
-    event_i     "i", ioriginsnum + ((indx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
-      cpstuni(ipitval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
-    endif
-  indx      +=        1
+    event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
+  endif
+  ipvsndx += 1
   od
 endop
 
@@ -3374,12 +3334,12 @@ opcode _cslc_loopmaster, 0, i[]i[]i[]pjpp
   id = ievent[0]
   iinstance = id * 0.001
   iloopins = 10
-  icodestrset = 0 ;changed from -1
+  icodestrset = 0
   iloopndx = 0
   icurrentnstnce = 0 ;index in gi_cslc_Looprec for current loop.
   inextnsnce = -1
   inextprob = 1
-  ;now check if the id already exists
+  ;check if the loop id already exists
   until iloopndx > gi_cslc_loop_tally do
     if (gi_cslc_LoopID[iloopndx] == id) then
       inextnsnce = gi_cslc_Looprec[iloopndx][10] 
@@ -3396,19 +3356,11 @@ opcode _cslc_loopmaster, 0, i[]i[]i[]pjpp
   ilptmlen lenarray ilptms
   idividers[] fillarray ibaselen, ibaselen + ipitlen, ibaselen + ipitlen + ilptmlen
   ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ievent,idividers
-  Sschedchn sprintf "lpsched:%f",ieventsnd[0] 
-  icurrentsched = chnget:i(Sschedchn)
-  ischedtm = icurrentsched - now() - (2/kr)
   ieventsnd[2] = lenarray(ieventsnd)
   gi_cslc_Looprec setrow ieventsnd,iloopndx
   gi_cslc_Looprec[iloopndx][4] = 1
   gi_cslc_LoopID[iloopndx] = id
   gi_cslc_loop_tally = max:i(gi_cslc_loop_tally, iloopndx+1)
-  if ischedtm < 0 then
-     ieventsnd[1] = nextbeat(iabtms[0])
-  else
-     ieventsnd[1] = tempodur(ischedtm)
-  endif
   if (ipoly == -1) then
      ;no sound
   else
@@ -3469,7 +3421,8 @@ opcode loopevent, 0, k[]k[]i[]pjpp
   endop
 
 ;;;;; 
-;; Recursively loop k-rate control signals in a channel 
+;; Recursively loop k-rate control signals in a channel
+;; I should update this code too.
 ;;;;;
 opcode loopctr, 0,Sii[]poooo
   Schan,idest,ilptms[],itrig,initreset,initval,itype,ist xin
@@ -3578,19 +3531,11 @@ opcode loopcode, 0, i[]SSp
   ilptmlen lenarray ilptms
   idividers[] fillarray ibaselen, ibaselen + ipitlen, ibaselen + ipitlen + ilptmlen
   ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ievent,idividers
-  Sschedchn sprintf "lpsched:%f",ieventsnd[0] 
-  icurrentsched = chnget:i(Sschedchn)
-  ischedtm = icurrentsched - now() - (2/kr)
   ieventsnd[2] = lenarray(ieventsnd)
   gi_cslc_Looprec setrow ieventsnd,iloopndx
   gi_cslc_Looprec[iloopndx][4] = 1
   gi_cslc_LoopID[iloopndx] = id
   gi_cslc_loop_tally = max:i(gi_cslc_loop_tally, iloopndx+1)  
-  if ischedtm < 0 then
-     ieventsnd[1] = nextbeat(iabtms[0])
-  else
-     ieventsnd[1] = tempodur(ischedtm)
-  endif
   if (itrig == -1) then
      ;no sound
   else
@@ -3852,43 +3797,56 @@ endin
 
 
 ;;Recursive instrument for the loopevent, loopcode and loopctr opcodes.
+;;Recursive instrument for the loopevent, loopcode and loopctr opcodes.
 instr 10
-ipcnt pcount
-ipArr[] passign
-ival = p(ipcnt)
-ipoly = ipArr[4]
-kpoly = ipArr[4]
-cggoto (ipoly == 0 || ipoly == 1), NEXT
-itonic = ipArr[7]
-icodeget = ipArr[8]
-irhgate = ipArr[5]
-ipitdir = ipArr[6]
-icurrentnstnce = ipArr[9] 
-inextnsnce = gi_cslc_Looprec[icurrentnstnce][10]  
-inextprob = gi_cslc_Looprec[icurrentnstnce][11]
-if (icodeget != 0) then
-   Scode strget abs(icodeget)
-endif
-idivider1 = ipArr[lenarray(ipArr) - 3]
-idivider2 = ipArr[lenarray(ipArr) - 2] 
-idivider3 = ipArr[lenarray(ipArr) - 1] 
-ipitarray[] slicearray ipArr, idivider1, idivider2 - 1 
-ibeatArr[] slicearray ipArr, idivider2, idivider3 - 1
-ischedArr[] slicearray ipArr, idivider3, lenarray(ipArr) - 4
-Slooprhid sprintf "rh%f", ischedArr[0]
-Spitid sprintf "pit%f", ischedArr[0]
-itonic = (itonic == -1 ? giTonic_ndx : itonic)
-if ipoly > 1 then
-    if lenarray(ibeatArr) == 1 then
-      ialtrh = ibeatArr[0]
+  ipcnt pcount
+  ipArr[] passign
+  ival = p(ipcnt)
+  ipoly = ipArr[4]
+  kpoly = ipArr[4]
+  inow = now()
+  idivider2 = ipArr[lenarray(ipArr) - 2]
+  idivider3 = ipArr[lenarray(ipArr) - 1]   
+  ibeatArr[] slicearray ipArr, idivider2, idivider3 - 1
+  ischedArr[] slicearray ipArr, idivider3, lenarray(ipArr) - 4
+  Slooprhid sprintf "rh%f", ischedArr[0]
+  if lenarray(ibeatArr) == 1 then
+     ialtrh = ibeatArr[0]
+  else
+    if (ipoly == 1) then
+      printf_i "here %f\n",1,ibeatArr[chnget(Slooprhid)]
+      ialtrh = ibeatArr[wrap:i(chnget(Slooprhid) - 1,0,lenarray(ibeatArr))]
     else
+      printf_i "or here %f\n",1,ibeatArr[chnget(Slooprhid)]      
       ialtrh = iterArr(ibeatArr, Slooprhid)
-    endif
-    iabsrh abs ialtrh
+    endif  
+  endif
+  iabsrh abs ialtrh
+  if ipoly = 2 then
+    inextrh = nextbeat(iabsrh)    
+  elseif (abs(inow - roundfrac(inow,iabsrh)) < (1/kr)) then
+    inextrh = nextbeat(iabsrh)
+  else
+    inextrh = onbeat(0,iabsrh)
+  endif    
+  cggoto (ipoly == 0 || ipoly == 1), NEXT
+  itonic = ipArr[7]
+  icodeget = ipArr[8]
+  irhgate = ipArr[5]
+  ipitdir = ipArr[6]
+  icurrentnstnce = ipArr[9] 
+  inextnsnce = gi_cslc_Looprec[icurrentnstnce][10]  
+  inextprob = gi_cslc_Looprec[icurrentnstnce][11]
+  if (icodeget != 0) then
+     Scode strget abs(icodeget)
+  endif
+  idivider1 = ipArr[lenarray(ipArr) - 3]
+  ipitarray[] slicearray ipArr, idivider1, idivider2 - 1 
+  Spitid sprintf "pit%f", ischedArr[0]
+  itonic = (itonic == -1 ? giTonic_ndx : itonic)
+  if ipoly > 1 then
     irhgatetest random 0,1
-    if iabsrh <= 2/kr then
-      ;do nothing
-    elseif icodeget < 0 then
+    if icodeget < 0 then
       instndx = ischedArr[7]
       idest = ischedArr[3]
       idel = ischedArr[4]
@@ -3896,7 +3854,7 @@ if ipoly > 1 then
       iendreset = 1
       initval = ischedArr[6]
       itype = ischedArr[5]
-      Sout sprintf "i3 %f %f \"%s\" %f %f %f %f %d", ist, iabsrh, Scode, idest, itype, iendreset, initval, instndx
+      Sout sprintf "i3 %f %f \"%s\" %f %f %f %f %d", ist, inextrh, Scode, idest, itype, iendreset, initval, instndx
       scoreline_i Sout      
     else
       ipitdeg = iterArr(ipitarray, Spitid,ipitdir) + ischedArr[4] + itonic
@@ -3915,8 +3873,8 @@ if ipoly > 1 then
     else
       schedule ieventArr
     endif
-    ipArr[1] = iabsrh
-    Sschedchn sprintf "lpsched:%f", ipArr[0]
+    ipArr[1] = inextrh
+    ;;Sschedchn sprintf "lpsched:%f", ipArr[0]
     if chnget:i(Slooprhid) != (lenarray(ibeatArr) - 1) then
       irecurse[] = ipArr
     elseif inextprob < random:i(0,1) then
@@ -3943,23 +3901,24 @@ if ipoly > 1 then
         gi_cslc_Looprec[icurrentnstnce][11] = isrcnp
       endif
     endif
-   irecurse[1] = nextbeat(irecurse[1])
+    ;irecurse[1] = nextbeat(irecurse[1])
+    ;irecurse[1] = nextbeat(irecurse[1]) 
    schedule irecurse
-   chnset now() + irecurse[1], Sschedchn
-endif
+   ;;chnset now() + irecurse[1], Sschedchn
+  endif
 NEXT:
-if (kpoly == 1) then
-    turnoff3 p1
-    kpArr[] = ipArr 
-    kpArr[4] = 2
-    kpArr[1] = 0
-    schedulek kpArr
-elseif (kpoly == 0) then
-   kpArr[] = ipArr 
-   kpoly = 2
-   turnoff3 kpArr[0]
-endif
-turnoff
+  if (kpoly == 1) then
+     turnoff3 p1
+     kpArr[] = ipArr
+     kpArr[1] = k(inextrh)
+     kpArr[4] = 2
+     schedulek kpArr
+  elseif (kpoly == 0) then
+     kpArr[] = ipArr 
+     kpoly = 2
+     turnoff3 kpArr[0]
+  endif
+  turnoff
 endin
 
 opcode beep, 0,0
