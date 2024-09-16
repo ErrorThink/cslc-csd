@@ -29,6 +29,7 @@ gienvlpxrrise ftgen 0,0,129,-7,0,128, 1
 
 ;foraltfm
 gi_altfm ftgen 0, 0, 17, 2, 0, .2, .3, 0.8, 1.0, 0.8, 0.5, 0.2, 0, -0.3, -0.5, -0.8, -1.0, -0.9, -0.7, -0.3, 0 ;casio
+gitremtab ftgen 0,0,513,8,1,1,0,510,0,1,0.7
 
 ;for bassUV
 gi_biexp ftgen 0, 0, 16384, 21, 5,1
@@ -797,7 +798,6 @@ endop
 ;aang in degrees (0 - 360)
 opcode movest,aa,aaai
    asrc,adist,aang,imicsep xin
-   ;setksmps 1
    imichalf = imicsep*0.5   
 
    asrcL = asrc
@@ -820,7 +820,7 @@ opcode movest,aa,aaai
    adistampR = ampdbfs(dbamp2(sqrt(1/(adistR^2))))
 
    aleft          =         aflysigL*adistampL
-   aright          =         aflysigR*adistampR
+   aright          =         aflysigR*adistampR  
   xout aleft, aright
 endop
 
@@ -1622,6 +1622,36 @@ kamp, kfqc, inoisdur, intens xin
   
   xout asig*0.8
 endop
+
+opcode wobstrings,a,KKjj
+kamp, kfqc, itremrate, intens xin
+  idur    = abs(p3)
+  itie tival
+  ireverse = 0
+  intens *= 10
+  kndx1   = 7.5/log(kfqc)    
+  kndx2   = 15/sqrt(kfqc)    
+  kndx3   = 1.25/sqrt(kfqc)  
+
+  ktrans = oscili(intens,itremrate,gitremtab,0)
+  ktrans = (ktrans*0.5) + 0.5
+
+  anoise pinker
+  attack  oscil  anoise*ktrans*0.3*kamp,kfqc*8
+  kvibamp linseg 0, idur*0.3, 0, idur*0.4, 0.009, idur*0.3, 0
+  kvibfrq linseg 0, idur*0.3, 5, idur*0.7, 3
+  kvib vibr kvibamp, kvibfrq, -1
+  
+  amod1   oscil  kfqc*(kndx1+ktrans),kfqc*1.007, -1, (itie == 1 ? -1:0)
+  amod2   oscil  kfqc*3*(kndx2+ktrans),kfqc*2.01, -1, (itie == 1 ? -1:0)
+  amod3   oscil  kfqc*4*(kndx3+ktrans),kfqc*5, -1, (itie == 1 ? -1:0)
+  asig    oscili  kamp,(kfqc+amod1+amod2+amod3)*(1+kvib), gi_altfm, (itie == 1 ? -1:0)
+  asig2 = asig * attack
+  asig = (asig + attack) * linseg(itie, limit(idur*0.1, 0.05, 0.1), 1, idur, 1)
+  
+  xout asig*0.8
+endop
+
 
 
 opcode simpleverb,a,apP

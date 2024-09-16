@@ -20,7 +20,7 @@ Some instrument numbers are reserved and should be avoided: 1 - 10,299,300,301
 To use the instruments in Sounds.orc, uncomment the commandline flag above:
 `--omacro:SOUNDLIB=Sounds.orc`
 And save Sounds.orc in your $INCDIR path, (or same directory as cslc.csd) 
-The 'patch' feature requires named instruments.
+The 'patch' UDO's require named instruments, ratrher than numbered.
 All UDO's have i-time versions. This allows them to be used in csound global space (outside instrument defenitions)
 
 FEATURES / UDO's:
@@ -36,16 +36,16 @@ _cslc_<name> e.g. _cslc_loopmaster
 These UDO's are used within other UDO's. It is not expected that users would use these UDO's in performance (although nothing strictly prohibits this).
 
 Private variable names use the format
-rate_cslc_<name> e.g. gk_cslc_tempo
+<rate>_cslc_<name> e.g. gk_cslc_tempo
 
 Public UDO names haven't been pseudo namespaced, largely to assist with the convenience of live coding.
-However be wary of name clashes / overloading.
+So be wary of name clashes / overloading in your own code.
 
 Public UDO's:
-;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; RHYTHM
 A clock (gk_now) begins running when performance starts.
-The clock value is meaured in bpm. 
+The clock value increments fractionally during performance at a rate set by thge tempo.
 A 'beat' can be considered as a round number in the clock.
 ---
 now - the current value of the clock 
@@ -61,20 +61,20 @@ euclidean/euclidean_i - Use a euclidean rhythm algorithm to return an array of r
 ;; MICROTONAL
 Scales are stored in tables in a format suitable for the cpstun/i opcodes.
 Two tables are always available: gi_SuperScale, and gi_CurrentScale
-Many UDO's (such as the event generators will reference the scales set in these tables)
 Typically, one would put a complete temperament in gi_Superscale (e.g. a chromatic scale). 
 A subset of that temperament is then placed in gi_CurrentScale (e.g. a major scale)
+Many UDO's in this library (such as the event generators) reference the scales set in these tables.
 
 Many of the supplied scale tables set degree '0' at 263 cps. 
 
 Tbedn - Generate a table of equidistant degrees per period
 cpstun3 - return values from a scale table
 cps2deg - returns the nearest scale value to the value given in cps pitch.
-sclbend - returns the cps pitch when given a scale degree and a modifier (pitchbend) channel.
+sclbend - returns the interpolated cps pitch when given a scale degree and a modifier (pitchbend) channel.
 passing - returns an interpolated array of from a subset of scale degrees.
 scalemode - Sets gi_CurrentScale to a mode from gi_SuperScale.
 scaleModulate - Shifts and rotates the interval pattern in gi_CurrentScale
-scalemode31 - Sets gi_CurrentScale with a selection of modes in 31edo 
+scalemode31 - Sets gi_CurrentScale with a selection of modes in gi_31secors
 scldegmatch - returns the index in one scale table which matches the pitch from another scale table.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
@@ -255,10 +255,12 @@ gi12coul_12afn ftgen 0,0,64,-2, 12, 2, 263, 0,
 gi_31edo ftgen 0,0,64,-2, 31, 2, 263, 0,\
 1, 2^(1/31) ,2^(2/31),2^(3/31),2^(4/31),2^(5/31),2^(6/31),2^(7/31),2^(8/31),2^(9/31),2^(10/31),2^(11/31),2^(12/31),2^(13/31),2^(14/31),2^(15/31),2^(16/31),2^(17/31),2^(18/31),2^(19/31),2^(20/31),2^(21/31),2^(22/31),2^(23/31),2^(24/31),2^(25/31),2^(26/31),2^(27/31),2^(28/31),2^(29/31),2^(30/31),2
 
+;;31 intervals picked from the 1st, 2nd, and 6th cycle through the octave using the secor interval.
+;;Sounds slightly better (sometimes) than 31edo (to me anyway).
 gi_31secors ftgen 0,0,64,-2,31,2,263,0,\
 1.0000000,1.0212285,1.0496388,1.0697421,1.0924511,1.1228428,1.1443481,1.1686409,1.2011522,1.2241573,1.2501443,1.2849230,1.3095326,1.3373320,1.3745362,1.4008621,1.4306003,1.4703992,1.4985612,1.5303734,1.5729479,1.6030739,1.6371048,1.6826486,1.7148756,1.7512799,1.8000000,1.8344746,1.8734178,1.9255357,1.9624147,2.0000000
 
-;Some interval arrays
+;Some mode arrays
 gk12majormode[] array 2,2,1,2,2,2,1
 gi12majormode[] array 2,2,1,2,2,2,1
 gk12minormode[] array 2,1,2,2,1,2,2
@@ -270,6 +272,7 @@ gi31DiaDom7[] array 5,5,2,5,5,3,6
 gi31MinDom7[] array 5,2,6,5,2,5,6
 gi31Neutral[] array 4,5,4,5,4,5,4
 gi31Diminished[] array 4,2,6,4,2,6,7
+gi31Div2[] array 4,8,3,2,3,7,4
 ;more than 7 notes!
 gi31Orwell[] array 4,3,4,3,4,3,4,3,3
 
@@ -2047,15 +2050,18 @@ elseif (imode == 7) then
     scalemode gi_31secors, idegree, gi31Orwell
 elseif (imode == 8) then
     iharmonics[] fillarray 8,7,6,5,4,3,2,1    
-  scalemode gi_31secors, idegree, iharmonics    
+    scalemode gi_31secors, idegree, iharmonics
+elseif (imode == 9) then
+    scalemode gi_31secors, idegree, gi31Div2    
 else
   scalemode gi_31secors, idegree, _cslc_get2dArr(idegree, gi_cslc_31Modes)
 endif
 endop
 
+;;Set modes for scalemode31 using the mode name. 
 opcode scalemode31, 0, iS
   idegree,Smode xin
-  SArr[] fillarray "chromatic","major","minor","M7","m7","dim","neutral","orwell","harmonic"
+  SArr[] fillarray "chromatic","major","minor","M7","m7","dim","neutral","orwell","harmonic","Div2"
   imode _cslc_find Smode, SArr
   if imode != -1 then
     scalemode31 idegree,imode
@@ -2149,17 +2155,29 @@ od
 xout iArrRes
 endop
 
+;round to nearest fraction
+opcode roundfrac,i,ii
+   inum, inxt xin
+   inum = (inum % inxt == 0 ? inum + 0.00001:inum)
+   idenom = 1/inxt
+   ia = inum * idenom
+   ib = round(ia)
+   ic = divz(ib,idenom,0)
+   xout ic
+endop
 
-opcode nextbeat, i, p
-ibeatcount xin
-if ibeatcount == 0 then
-iresult = 0
-else
-inow = now()
-ibc = frac(ibeatcount)
-inudge = int(ibeatcount)
-iresult = inudge + ibc + (round(divz(inow, ibc, inow)) * (ibc == 0 ? 1 : ibc)) - inow
-endif
+opcode nextbeat,i,p
+   ibeat xin
+   inow = now()
+   if ibeat > 1 then
+      ibc = frac(ibeat)
+      inudge = int(ibeat)
+      iresult = inudge + ibc + (round(divz(inow, ibc, inow)) * (ibc == 0 ? 1 : ibc)) - inow
+  else
+      inextnow = inow + ibeat
+      iquantise = roundfrac(inextnow, 0.005) 
+      iresult = iquantise - inow
+   endif
 xout tempodur(iresult)
 endop
 
@@ -2476,16 +2494,6 @@ xout iresult
   
 endop  
 
-;round to nearest fraction
-opcode roundfrac,i,ii
-   inum, inxt xin
-   inum = (inum % inxt == 0 ? inum + 0.00001:inum)
-   idenom = 1/inxt
-   ia = inum * idenom
-   ib = round(ia)
-   ic = divz(ib,idenom,0)
-   xout ic
-endop
 
 ;a wrapper around a power curve really. 
 ;ipower < 0.5 = convex fast to approach 1
@@ -2698,7 +2706,7 @@ endif
 xout rotatearray(iout, irotate)
 endop
 
-; orni UDO
+; orn UDO
 ;   koriginal[], \
 ;   kwhens[], kdurs[], kamps[], kintervals[] [, kp6] [,kp7] [,...]\
 ;   korndur, kscale, koverlap xin
@@ -2764,9 +2772,9 @@ schedule 11, nextbeat(1), 1
 
 
 ;;; this version requires iorndur (duration of the ornament) to be provided.
-opcode _cslc_ornimaster, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
+opcode _cslc_ornimaster, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
   ioriginal[], \
-  iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], ip9[], ip10[], \
+  iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], ip9[], ip10[], ip11[], \
   iorndur,ipitbound,iscale xin
 
   ;a negative p1 is special, and forces instance instrument numbers  to increment
@@ -2798,6 +2806,8 @@ opcode _cslc_ornimaster, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
   ip9val   =  ioriginal[8 % iplen]
   ip10ndx    init      0
   ip10val   =  ioriginal[9 % iplen]
+  ip11ndx    init      0
+  ip11val   =  ioriginal[10 % iplen]
 
   until     (indx >= lenarray(istarts)) do
     istartval =  tempodur(istarts[indx])
@@ -2876,15 +2886,22 @@ opcode _cslc_ornimaster, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
                    ip6val, ip7val, ip8val, ip9val
     igoto break
     endif
-
     ip10ndx = indx % lenarray(ip10)
     ip10val    +=        ip10[ip10ndx]
     if (iplen == 10) then
     event_i     "i", abs(ioriginal[0]) + (iinsincr * (indx + 1)), istartval, (abs(idurval) <= 0.0001 ? 0.0001 : idurval), \
                   (iampval < 0 ? 0 : iampval), cpstuni(ipitvalb, iscale), \
                    ip6val, ip7val, ip8val, ip9val, ip10val
+    igoto break
     endif
-   
+    ip11ndx = indx % lenarray(ip11)
+    ip11val    +=        ip11[ip11ndx]
+    if (iplen == 11) then
+    event_i     "i", abs(ioriginal[0]) + (iinsincr * (indx + 1)), istartval, (abs(idurval) <= 0.0001 ? 0.0001 : idurval), \
+                  (iampval < 0 ? 0 : iampval), cpstuni(ipitvalb, iscale), \
+                   ip6val, ip7val, ip8val, ip9val, ip10val, ip11val
+    endif
+  
     break:
     indx      +=        1
   od
@@ -2897,7 +2914,7 @@ opcode orn, 0, k[]ik[]ioo
   koriginal[], \
   iwhen, kintervals[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(array(iwhen)), ca(array(0)), ca(array(0)), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(array(iwhen)), ca(array(0)), ca(array(0)), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 ;3 arrays = original, whens, intervals only, durs and amps constant
@@ -2905,7 +2922,7 @@ opcode orn, 0, k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kintervals[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(array(0)), ca(array(0)), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(array(0)), ca(array(0)), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 ;4 arrays = original, whens, amps, intervals only - durs are constant
@@ -2913,7 +2930,7 @@ opcode orn, 0, k[]k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kamps[], kintervals[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(array(0)), ca(kamps), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(array(0)), ca(kamps), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 ;p5
@@ -2921,7 +2938,7 @@ opcode orn, 0, k[]k[]k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kdurs[], kamps[], kintervals[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 
@@ -2930,7 +2947,7 @@ opcode orn, 0, k[]k[]k[]k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kdurs[], kamps[], kintervals[], kp6[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 ;p7
@@ -2938,7 +2955,7 @@ opcode orn, 0, k[]k[]k[]k[]k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kdurs[], kamps[], kintervals[], kp6[], kp7[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(array(0)), ca(array(0)), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(array(0)), ca(array(0)), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 ;p8
@@ -2946,7 +2963,7 @@ opcode orn, 0, k[]k[]k[]k[]k[]k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kdurs[], kamps[], kintervals[], kp6[], kp7[], kp8[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(array(0)), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(array(0)), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 ;p9
@@ -2954,7 +2971,7 @@ opcode orn, 0, k[]k[]k[]k[]k[]k[]k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kdurs[], kamps[], kintervals[], kp6[], kp7[], kp8[], kp9[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(kp9), ca(array(0)), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(kp9), ca(array(0)), ca(array(0)),iorndur, ipitbound, iscale
 endop
 
 ;p10
@@ -2962,7 +2979,14 @@ opcode orn, 0, k[]k[]k[]k[]k[]k[]k[]k[]k[]k[]ioo
   koriginal[], \
   kwhens[], kdurs[], kamps[], kintervals[], kp6[], kp7[], kp8[], kp9[], kp10[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(kp9), ca(kp10), iorndur, ipitbound, iscale
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(kp9), ca(kp10),ca(array(0)), iorndur, ipitbound, iscale
+endop
+;p11
+opcode orn, 0, k[]k[]k[]k[]k[]k[]k[]k[]k[]k[]k[]ioo
+  koriginal[], \
+  kwhens[], kdurs[], kamps[], kintervals[], kp6[], kp7[], kp8[], kp9[], kp10[],kp11[], \
+  iorndur, ipitbound, iscale xin
+  _cslc_ornimaster ca(koriginal), ca(kwhens), ca(kdurs), ca(kamps), ca(kintervals), ca(kp6), ca(kp7), ca(kp8), ca(kp9), ca(kp10),ca(kp11), iorndur, ipitbound, iscale
 endop
 ;;;;;;;;;;;irate versions
 ;2 arrays and constant (i) rhythm
@@ -2972,7 +2996,7 @@ opcode orn, 0, i[]ii[]ioo
   iorndur, ipitbound, iscale xin
   iwhens[] fillarray iwhen
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, iempty, iempty, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, iempty, iempty, iintervals, iempty, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 ;3 arrays = original, whens, intervals only, durs and amps constant
@@ -2981,7 +3005,7 @@ opcode orn, 0, i[]i[]i[]ioo
   iwhens[], iintervals[], \
   iorndur, ipitbound, iscale xin
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, iempty, iempty, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, iempty, iempty, iintervals, iempty, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 ;4 arrays = original, whens, amps, intervals only - durs are constant
@@ -2990,7 +3014,7 @@ opcode orn, 0, i[]i[]i[]i[]ioo
   iwhens[], iamps[], iintervals[], \
   iorndur, ipitbound, iscale xin
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, iempty, iamps, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, iempty, iamps, iintervals, iempty, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 ;p5
@@ -2999,7 +3023,7 @@ opcode orn, 0, i[]i[]i[]i[]i[]ioo
   iwhens[], idurs[], iamps[], iintervals[], \
   iorndur, ipitbound, iscale xin
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, iempty, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 
@@ -3009,7 +3033,7 @@ opcode orn, 0, i[]i[]i[]i[]i[]i[]ioo
   iwhens[], idurs[], iamps[], iintervals[], ip6[], \
   iorndur, ipitbound, iscale xin
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, iempty, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 ;p7
@@ -3018,7 +3042,7 @@ opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]ioo
   iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], \
   iorndur, ipitbound, iscale xin
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, iempty, iempty, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, iempty, iempty, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 ;p8
@@ -3027,7 +3051,7 @@ opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]i[]ioo
   iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], \
   iorndur, ipitbound, iscale xin
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, iempty, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, iempty, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 ;p9
@@ -3036,7 +3060,7 @@ opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
   iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], ip9[], \
   iorndur, ipitbound, iscale xin
   iempty[] fillarray 0
-  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, ip9, iempty, iorndur, ipitbound, iscale
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, ip9, iempty, iempty, iorndur, ipitbound, iscale
 endop
 
 ;p10
@@ -3044,7 +3068,15 @@ opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
   ioriginal[], \
   iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], ip9[], ip10[], \
   iorndur, ipitbound, iscale xin
-  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, ip9, ip10, iorndur, ipitbound, iscale
+  iempty[] fillarray 0
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, ip9, ip10, iempty, iorndur, ipitbound, iscale
+endop
+;p11
+opcode orn, 0, i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]i[]ioo
+  ioriginal[], \
+  iwhens[], idurs[], iamps[], iintervals[], ip6[], ip7[], ip8[], ip9[], ip10[], ip11[], \
+  iorndur, ipitbound, iscale xin
+  _cslc_ornimaster ioriginal, iwhens, idurs, iamps, iintervals, ip6, ip7, ip8, ip9, ip10, ip11, iorndur, ipitbound, iscale
 endop
 
 
@@ -3132,8 +3164,11 @@ opcode chrdi,0,i[]i[]ooooo
       event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8]
     elseif (iplen == 10) then
-    event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
-      cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+                      cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
+    elseif (iplen == 11) then
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+                      cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9],ioriginal[10]
   endif
   ipvsndx += 1
   od
@@ -3238,6 +3273,14 @@ opcode arpi, 0, i[]i[]i[]i[]iopo
   iarg9 = ioriginal[8]
   iarg10 = ioriginal[9]
   event_i "i", iarg1, iarg2, ikdur, iarg4, cpstuni(ipitval, gi_CurrentScale), iarg6, iarg7, iarg8, iarg9,iarg10
+  elseif (iplen == 11) then
+  iarg6 = ioriginal[5]
+  iarg7 = ioriginal[6]
+  iarg8 = ioriginal[7]
+  iarg9 = ioriginal[8]
+  iarg10 = ioriginal[9]
+  iarg11 = ioriginal[10]
+  event_i "i", iarg1, iarg2, ikdur, iarg4, cpstuni(ipitval, gi_CurrentScale), iarg6, iarg7, iarg8, iarg9,iarg10,iarg11
   endif
   if (iaccelmode == 1) then
       ikonsetfac = (1 - (ionsetprogress * (1 - abs(ionsetfac))))
@@ -3263,6 +3306,7 @@ opcode arpi, 0, i[]i[]i[]i[]iopo
   od
 endop
 
+;arpi overload wrappers
 opcode arpi, 0, k[]k[]k[]k[]iopo
   koriginal[],kintervals[],konsets[],kampmults[],idur,ievdur, ionsetfac, iampfac xin
   ioriginal[] castarray koriginal
@@ -3481,6 +3525,7 @@ opcode loopctr, 0,Sii[]poooo
   if (itrig == -1) then
      ;no sound
   else
+    printf_i "loopctr %f\n",1,ieventsnd[1]
     schedule ieventsnd
   endif
 endop
@@ -3493,13 +3538,19 @@ endop
 
 ;;; loop arbitrary Csound code.
 ;;; limited to irate code (for now).
+
+;;; ok experiment - first run sends a negative instance ID.
+
 opcode loopcode, 0, i[]SSp
   ilptms[],Sid,Scode,itrig xin  
   iabtms[] abs ilptms
   ilptm sumarray iabtms
   instanceid = _cslc_find(Sid,gS_cslc_ActiveChans)
   if instanceid == -1 then
-    instanceid = _cslc_updateActiveChans(Sid)    
+    instanceid = _cslc_updateActiveChans(Sid)
+    ievent[] fillarray -instanceid, 0, 0.1, 0,0
+  else
+    ievent[] fillarray instanceid, 0, 0.1, 0,0    
   endif  
   id = instanceid
   iinstance = instanceid * 0.00001
@@ -3510,7 +3561,6 @@ opcode loopcode, 0, i[]SSp
   irhgate = 1
   ipitdir = 1
   ipits[] fillarray 0
-  ievent[] fillarray instanceid, 0, 0.1, 0,0
   iloopndx = 0
   icurrentnstnce = 0
   inextnsnce = -1
@@ -3797,7 +3847,6 @@ endin
 
 
 ;;Recursive instrument for the loopevent, loopcode and loopctr opcodes.
-;;Recursive instrument for the loopevent, loopcode and loopctr opcodes.
 instr 10
   ipcnt pcount
   ipArr[] passign
@@ -3809,25 +3858,33 @@ instr 10
   idivider3 = ipArr[lenarray(ipArr) - 1]   
   ibeatArr[] slicearray ipArr, idivider2, idivider3 - 1
   ischedArr[] slicearray ipArr, idivider3, lenarray(ipArr) - 4
+  if ischedArr[0] < 0 then
+    ifirst = 1
+    ischedArr[0] = abs(ischedArr[0])
+  else
+    ifirst = 0
+  endif
   Slooprhid sprintf "rh%f", ischedArr[0]
   if lenarray(ibeatArr) == 1 then
      ialtrh = ibeatArr[0]
   else
     if (ipoly == 1) then
-      printf_i "here %f\n",1,ibeatArr[chnget(Slooprhid)]
-      ialtrh = ibeatArr[wrap:i(chnget(Slooprhid) - 1,0,lenarray(ibeatArr))]
+      ialtrh = ibeatArr[wrap:i(chnget:i(Slooprhid),0,lenarray(ibeatArr) - 1)]
     else
-      printf_i "or here %f\n",1,ibeatArr[chnget(Slooprhid)]      
       ialtrh = iterArr(ibeatArr, Slooprhid)
     endif  
   endif
   iabsrh abs ialtrh
   if ipoly = 2 then
-    inextrh = nextbeat(iabsrh)    
+    inextrh = nextbeat(iabsrh)
   elseif (abs(inow - roundfrac(inow,iabsrh)) < (1/kr)) then
     inextrh = nextbeat(iabsrh)
-  else
-    inextrh = onbeat(0,iabsrh)
+  elseif ifirst == 0 then
+    ichnndx = chnget:i(Slooprhid)
+    inextrhndx = wrap:i(ichnndx+1,0,lenarray(ibeatArr))
+    inextrh = onbeat(0,abs(ibeatArr[inextrhndx]))
+  else    
+    inextrh = onbeat(0,abs(ibeatArr[0]))
   endif    
   cggoto (ipoly == 0 || ipoly == 1), NEXT
   itonic = ipArr[7]
@@ -3850,8 +3907,8 @@ instr 10
       instndx = ischedArr[7]
       idest = ischedArr[3]
       idel = ischedArr[4]
-      ist = nextbeat(idel) ;default is nextbeat(1)
-      iendreset = 1
+      ist = tempodur(idel)
+      iendreset = 0
       initval = ischedArr[6]
       itype = ischedArr[5]
       Sout sprintf "i3 %f %f \"%s\" %f %f %f %f %d", ist, inextrh, Scode, idest, itype, iendreset, initval, instndx
@@ -3866,15 +3923,13 @@ instr 10
     elseif ialtrh < 0 then
       ;negative rhythm is a rest
     elseif (icodeget > 0) then
-      icompres evalstr Scode
-      ;evaluate if icodeget is positive
+      Scodesend sprintf "%s%f\n%s","iLOOPDUR = ",iabsrh,Scode
+      icompres evalstr Scodesend
     elseif (icodeget < 0) then
-      ;we've already launched linslide
     else
       schedule ieventArr
     endif
     ipArr[1] = inextrh
-    ;;Sschedchn sprintf "lpsched:%f", ipArr[0]
     if chnget:i(Slooprhid) != (lenarray(ibeatArr) - 1) then
       irecurse[] = ipArr
     elseif inextprob < random:i(0,1) then
@@ -3890,8 +3945,8 @@ instr 10
       inextArr[] getrow gi_cslc_Looprec, inextnsnce
       inextpcnt = inextArr[2]
       irecurse[] slicearray inextArr,0,inextpcnt - 1
-      irdiv2 = irecurse[inextpcnt - 2] ; 
-      irdiv3 = irecurse[inextpcnt - 1] ; 
+      irdiv2 = irecurse[inextpcnt - 2] 
+      irdiv3 = irecurse[inextpcnt - 1]
       irecbeats[] slicearray irecurse, irdiv2, irdiv3 - 1
       Sreclooprhid sprintf "rh%f", irecurse[irdiv3]
       irecurse[1] = irecbeats[chnget:i(Sreclooprhid) % lenarray(irecbeats)]
@@ -3901,10 +3956,7 @@ instr 10
         gi_cslc_Looprec[icurrentnstnce][11] = isrcnp
       endif
     endif
-    ;irecurse[1] = nextbeat(irecurse[1])
-    ;irecurse[1] = nextbeat(irecurse[1]) 
-   schedule irecurse
-   ;;chnset now() + irecurse[1], Sschedchn
+    schedule irecurse
   endif
 NEXT:
   if (kpoly == 1) then
