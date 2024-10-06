@@ -79,9 +79,9 @@ In this context 'Source' Intruments send audio to the patch system using the 'se
 'Effect' instruments retrieve and send audio back to the patch system. See 'EffectConstruct'.
 
 Syntax:  
-`patchsig Ssource, SDestination [,ilevel] `
-`patchchain Spatharray[] [,ilevel]` 
-`patchspread Ssource, SDestinationarray[] [,ilevel]` 
+`patchsig Ssource, SDestination [,ilevel/Slevel] `
+`patchchain Spatharray[] [,ilevel/Slevel]` 
+`patchspread Ssource, SDestinationarray[] [,ilevel[]]` 
 `send asig` 
 `send asig1,asig2` 
 `send asigs[]o`
@@ -92,6 +92,7 @@ Syntax:
 	Patchspread sends audio from Ssource to each effect in parallel. Useful for splitting the signal path.  
 	Spatharray[] (In patchchain) -- Spatharray is a string array of Instrument and/or Effect Names.  
 	Patchchain seqentially applies patchsig to each element in the array in series. Audio is routed between each instrument/effect from the beginning of the array to the end. While the first element can be a either a source instrument or an Effect, subsequent elements must be effects (with inputs).  
+	ilevel/ilevels[]/Slevel -- amplitude multipliers applied to patches. When using a string (Slevel) will use a channel name to retrive the multiplier.  
 	
 Example:
 ```csound

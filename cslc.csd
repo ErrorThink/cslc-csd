@@ -1,7 +1,8 @@
 <CsoundSynthesizer>
 <CsOptions>
 ;-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
--odac8 --port=8099 --sample-rate=48000 --ksmps=32 --nchnls=2 --0dbfs=1 -B512 -b64 --nodisplays --messagelevel=1120 -Ma --omacro:SOUNDLIB=Sounds.orc
+;-odac9 --port=8099 --sample-rate=48000 --ksmps=32 --nchnls=2 --0dbfs=1 -B512 -b64 --nodisplays --messagelevel=1120 -Ma --omacro:SOUNDLIB=Sounds.orc
+-odac9 --port=8099 --sample-rate=48000 --ksmps=32 --nchnls=2 --0dbfs=1 -B512 -b64 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
 
 </CsOptions>
 <CsVersion>
@@ -96,8 +97,8 @@ In this context 'Source' Intruments send audio to the patch system using the 'se
 'Effect' instruments retrieve and send audio back to the patch system.
 
 Syntax:
-patchsig Ssource, SDestination [,ilevel]
-patchchain Spatharray[] [,ilevel]
+patchsig Ssource, SDestination [,ilevel/Slevel]
+patchchain Spatharray[] [,ilevel/Slevel]
 patchspread Ssource, SDestinationarray[] [,ilevels[]]
 send asig
 send asig1,asig2
@@ -111,7 +112,7 @@ Spatharray[] (In patchchain) -- Spatharray is a string array of Instrument and/o
                                 Patchchain seqentially applies patchsig to each element in the array in series. 
                                 Audio is routed between each instrument/effect from the beginning of the array to the end. 
   				While the first element can be a either a source instrument or an Effect, subsequent elements must be effects (with inputs).
-ilevel/ilevels[] -- amplitude multipliers applied to patches.
+ilevel/ilevels[]/Slevel -- amplitude multipliers applied to patches. When using a string (Slevel) will use a channel name to retrive the multiplier.
 Example:
 instr myoscil
 asig oscil p4,p5
@@ -814,9 +815,8 @@ trim_i iresult, iresndx
 xout iresult
 endop
 
-
-opcode patchsig, 0,SSp
-Ssrc, Sdest, ilevel xin
+opcode _cslc_patchsig, 0,SSiS
+Ssrc, Sdest,ilevel,Slevelchn xin
 isrc nstrnum Ssrc
 isrcnums = _cslc_getSrcNumOuts(Ssrc) - 1;e.g. 0, 1
 idestnums = _cslc_getDestNumIns(Sdest) - 1; e.g. "Rvb:0", "Rvb:1"
@@ -830,7 +830,11 @@ until (imaxpatches < 0) do
     iencoded = encode4(isrc,isrcmodulo,imaxpatches,0)
     ienc = 5 + (iencoded / 10^7)
     printf_i "Patching %s:%d (instance %f) => Destchan %s\n",1,Ssrc,isrcmodulo,ienc, SDestchan
-    schedule ienc, 0, -1, SDestchan, ilevel, imaxpatches * -1
+    if ilevel == -1 then
+      schedule ienc, 0, -1, SDestchan, Slevelchn, imaxpatches * -1    
+      else
+      schedule ienc, 0, -1, SDestchan, ilevel, imaxpatches * -1
+    endif
     irecresult _cslc_recordpatch ienc
     inewpatches[imaxpatches] = iencoded
     if (_cslc_find(SDestchan, gS_cslc_channelarr) == -1) then
@@ -854,6 +858,15 @@ until ioldndx < 0 do
 od
 endop
 
+opcode patchsig, 0,SSp
+  Ssrc, Sdest, ilevel xin
+  _cslc_patchsig Ssrc, Sdest, ilevel, "_unused"
+endop
+
+opcode patchsig, 0,SSS
+  Ssrc, Sdest, Slevel xin
+  _cslc_patchsig Ssrc, Sdest, -1, Slevel
+endop
 
 opcode patchspread, 0,SS[]i[]
 Ssrc, Sdests[],ilevels[] xin
@@ -939,11 +952,28 @@ opcode patchchain,0,S[]p
 Schain[],ilevel xin
 ichainlen lenarray Schain
 indx = 0
-while indx < (ichainlen - 1) do
-   patchsig Schain[indx],Schain[indx+1],(indx == 0 ? ilevel : 1)
+  while indx < (ichainlen - 1) do
+   _cslc_patchsig Schain[indx],Schain[indx+1],(indx == 0 ? ilevel : 1),"_unused"
+   ;;patchsig Schain[indx],Schain[indx+1],(indx == 0 ? ilevel : 1)
    indx += 1
 od
 endop
+
+opcode patchchain,0,S[]S
+Schain[],Slevel xin
+ichainlen lenarray Schain
+indx = 0
+  while indx < (ichainlen - 1) do
+    if indx == 0 then
+      _cslc_patchsig Schain[indx],Schain[indx+1],-1,Slevel
+    else
+      _cslc_patchsig Schain[indx],Schain[indx+1],1,"_unused"
+    endif
+   ;;patchsig Schain[indx],Schain[indx+1],(indx == 0 ? Slevel : 1)
+   indx += 1
+od
+endop
+
 
 ;;n == Abbreviation for nstrnum. Convenience.
 opcode n, i,S
@@ -3468,8 +3498,8 @@ opcode loopevent, 0, k[]k[]i[]pjpp
 ;; Recursively loop k-rate control signals in a channel
 ;; I should update this code too.
 ;;;;;
-opcode loopctr, 0,Sii[]poooo
-  Schan,idest,ilptms[],itrig,initreset,initval,itype,ist xin
+opcode loopctr, 0,Si[]i[]poooo
+  Schan,idests[],ilptms[],itrig,initreset,initval,itype,ist xin
   instanceid = _cslc_find(Schan,gS_cslc_ActiveChans)
   if instanceid == -1 then
     instanceid = _cslc_updateActiveChans(Schan)    
@@ -3486,8 +3516,8 @@ opcode loopctr, 0,Sii[]poooo
   iloopins = 10
   itonic = 0
   irhgate = 1
-  ipitdir = 1
-  ipits[] fillarray 0
+  idestdir = 1
+  idest = idests[0]  
   ievent[] fillarray 3, 0, 1, idest, ist, itype,initval,instanceid
   iloopndx = 0
   icurrentnstnce = 0
@@ -3503,12 +3533,12 @@ opcode loopctr, 0,Sii[]poooo
   od
   BREAKOUT:
   icurrentnstnce = iloopndx
-  ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, limit(abs(itrig),0,1), irhgate,ipitdir,itonic,-icodestrset,icurrentnstnce,inextnsnce,inextprob
+  ibaseArr[] fillarray iloopins + iinstance, 0, 1, ilptm, limit(abs(itrig),0,1), irhgate,idestdir,itonic,-icodestrset,icurrentnstnce,inextnsnce,inextprob
   ibaselen lenarray ibaseArr 
-  ipitlen lenarray ipits
+  idestlen lenarray idests
   ilptmlen lenarray ilptms
-  idividers[] fillarray ibaselen, ibaselen + ipitlen, ibaselen + ipitlen + ilptmlen
-  ieventsnd[] _cslc_catarray ibaseArr, ipits, ilptms, ievent,idividers
+  idividers[] fillarray ibaselen, ibaselen + idestlen, ibaselen + idestlen + ilptmlen
+  ieventsnd[] _cslc_catarray ibaseArr, idests, ilptms, ievent,idividers
   Sschedchn sprintf "lpsched:%f",ieventsnd[0] 
   icurrentsched = chnget:i(Sschedchn)
   ischedtm = icurrentsched - now() - (2/kr)
@@ -3530,11 +3560,26 @@ opcode loopctr, 0,Sii[]poooo
   endif
 endop
 
+opcode loopctr, 0,Si[]k[]poooo
+  Schan,idests[],klptms[],itrig,initreset,initval,itype,ist xin
+  ilptms[] castarray klptms
+  loopctr Schan,idests,ilptms,itrig,initreset,initval,itype,ist
+endop
+
 opcode loopctr, 0,Sik[]poooo
   Schan,idest,klptms[],itrig,initreset,initval,itype,ist xin
+  idests[] fillarray idest
   ilptms[] castarray klptms
-  loopctr Schan,idest,ilptms,itrig,initreset,initval,itype,ist
+  loopctr Schan,idests,ilptms,itrig,initreset,initval,itype,ist
 endop
+
+opcode loopctr, 0,Siipoooo
+  Schan,idest,ilptm,itrig,initreset,initval,itype,ist xin
+  idests[] fillarray idest
+  ilptms[] fillarray ilptm
+  loopctr Schan,idests,ilptms,itrig,initreset,initval,itype,ist
+endop
+
 
 ;;; loop arbitrary Csound code.
 ;;; limited to irate code (for now).
@@ -3806,9 +3851,14 @@ endin
 instr 5
 idec = round((p1 - gi_cslc_patchsig_inum) * 10^7)
 isrcnum, ichan, instnce,inull decode4 idec
-   asrc = ga_cslc_PatchArr[isrcnum][ichan]
-   ;asrc *= madsr(0.07,0,p5,1)
-   asrc declickr asrc*p5, 0.5
+  asrc = ga_cslc_PatchArr[isrcnum][ichan]
+  klevel init p5
+  Slevel = p5
+  istrcmp strcmp strsub(Slevel,0,7),"soundin" ; undocumented 'feature' of csound.
+  if istrcmp != 0 then
+    klevel chnget Slevel
+  endif  
+   asrc declickr asrc*klevel, 0.5
    Sdest = p4 
    chnmix asrc, Sdest
 iclearenc = encode4(isrcnum,ichan,0,0)
@@ -3895,7 +3945,7 @@ instr 10
   inextnsnce = gi_cslc_Looprec[icurrentnstnce][10]  
   inextprob = gi_cslc_Looprec[icurrentnstnce][11]
   if (icodeget != 0) then
-     Scode strget abs(icodeget)
+    Scode strget abs(icodeget)
   endif
   idivider1 = ipArr[lenarray(ipArr) - 3]
   ipitarray[] slicearray ipArr, idivider1, idivider2 - 1 
@@ -3904,8 +3954,9 @@ instr 10
   if ipoly > 1 then
     irhgatetest random 0,1
     if icodeget < 0 then
+      Sdestid sprintf "dest%s",Scode      
+      idest = iterArr(ipitarray, Sdestid)
       instndx = ischedArr[7]
-      idest = ischedArr[3]
       idel = ischedArr[4]
       ist = tempodur(idel)
       iendreset = 0
