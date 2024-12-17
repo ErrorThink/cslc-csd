@@ -276,8 +276,9 @@ if (icount >= inumvoice) goto out
 ainl, ainr ensemblest ain, kdepth, inumvoice, icount + 1
 out:
 
-alfo rspline 0.001, kdpscale, 0.25, 1
-adel vdelay3 ain/(inumvoice * .5), alfo * 1000, 1000
+    alfo rspline kdpscale*0.5, kdpscale, 1, 3
+
+adel vdelay3 ain/(inumvoice * .5), alfo*1000, 4000
 
 al = ainl + adel * incr * icount
 ar = ainr + adel * (1 - incr * icount)
@@ -617,15 +618,15 @@ cggoto kQ == 1, bypass
 keqArrtrunc[] truncarray keqArr, 9 
 abal = al
 
-aleq eqfil al,    75,  75,keqArrtrunc[0] * kQ
-aleq eqfil aleq, 150, 150,keqArrtrunc[1] * kQ
-aleq eqfil aleq, 300, 300,keqArrtrunc[2] * kQ
-aleq eqfil aleq, 600, 600,keqArrtrunc[3] * kQ
-aleq eqfil aleq,1200,1200,keqArrtrunc[4] * kQ
-aleq eqfil aleq,2400,2400,keqArrtrunc[5] * kQ
-aleq eqfil aleq,4800,4800,keqArrtrunc[6] * kQ
-aleq eqfil aleq,9600,9600,keqArrtrunc[7] * kQ 
-acpy   eqfil aleq,15000,10000,keqArrtrunc[8] * kQ
+aleq eqfil al,    75,  75*2,keqArrtrunc[0] * kQ
+aleq eqfil aleq, 150, 150*2,keqArrtrunc[1] * kQ
+aleq eqfil aleq, 300, 300*2,keqArrtrunc[2] * kQ
+aleq eqfil aleq, 600, 600*2,keqArrtrunc[3] * kQ
+aleq eqfil aleq,1200,1200*2,keqArrtrunc[4] * kQ
+aleq eqfil aleq,2400,2400*2,keqArrtrunc[5] * kQ
+aleq eqfil aleq,4800,4800*2,keqArrtrunc[6] * kQ
+aleq eqfil aleq,9600,9600*2,keqArrtrunc[7] * kQ 
+aleq   eqfil aleq,15000,10000*2,keqArrtrunc[8] * kQ
 ;and a high shelf?
 al balance  al,abal
 al dcblock2 al
@@ -970,7 +971,6 @@ opcode freqShift, a, ak
   xout aupshift
 endop
 
-;modifed so vibrato amount is 0.4 by default (was 1)
 opcode bellpno,a,kiippj
   kamp, ifrq, imod,ir1,ir2,ivib xin
   ivib = (ivib == -1 ? 0.4:ivib)
@@ -979,8 +979,8 @@ opcode bellpno,a,kiippj
 
   kvib vibr linseg:k(0, 0.45, 0, 0.01, 4), 5, -1
 
-  aenv transeg 1, p3-0.01, -ir1, 0.01
-  adyn  transeg ifq2*imod, p3, -ir1, 0.1
+  aenv transeg i(kamp), p3-0.01, -(p3*i(kamp)), 0
+  adyn  transeg ifq2*imod*i(kamp), p3, -1, 0.0
   
   amod  oscili  adyn, ifq2, gimodfn
   a1    oscili  kamp*aenv, (ifq1+amod) + (kvib * ivib), gicarfn
@@ -988,15 +988,18 @@ opcode bellpno,a,kiippj
 xout a1
 endop
 
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Slightly modified toms from Hans Mickelson, 1999
+;;
 opcode tomfm, a,iijjj
   iamp, ifqc, ihit, ifco, irez xin
 
   ihit = ((ihit == -1) ? 0.18:ihit)
   ihit = ihit + 0.01
-
-  ifco = ((ifco == -1) ? 0.5:ifco)
-  ifco *= (ifco*8) + 10
-
+  ifco = ((ifco == -1) ? 371:3000*tanh(tanh(ifco)))
   irez = ((irez == -1) ? 0.5:irez)
   irez = rescale(irez, 0, 1, 5, 70)
 
@@ -1004,17 +1007,15 @@ opcode tomfm, a,iijjj
 
   afqc1  expseg    1.9, ihit*0.5*abs(p3), 1.11, 0.2, 1 ; Pitch bend
   afqc   =         afqc1*afqc1                       ; Pitch bend squared
-  aamp1  expseg    0.01, 0.001, 1, abs(p3) - 0.001, 0.04      ; Tone envelope
-  aamp2  expseg    0.01, 0.001, 1, abs(p3) * ihit, 0.01 ; Noise envelope
-
+  aamp1  expseg    0.00001, 0.001, 1, abs(p3) - 0.08, 0.04,0.08-0.001,0.000001
+  aamp2  expseg    0.00001, 0.001, 1, abs(p3) * ihit, 0.01 ; Noise envelope
   arnd1  noise      ihamp,0.5                          ; Genrate noise
   arnd   rezzy     arnd1, ifco, irez, 1           ; High pass mode 
-
   asig1   oscili     1,   afqc*ifqc*(1+arnd*aamp2); 
   asig2   oscili     1,   afqc*ifqc*(1.11+arnd*aamp2);,-1,-0.05; 
   asig ntrpol asig1, asig2, linseg:k(0.5,0.7,0.9)
   aout   =         asig*iamp*aamp1;*adclck         ; Apply amp envelope and declick
-  aout buthp aout, 15 
+  aout buthp aout, 25
 
 xout aout
 endop
@@ -1037,8 +1038,8 @@ anoise *= transeg:a(1, 0.005, 1, 0)
 anoise += mpulse(kamp, 0, 0.002)
 aswp += anoise
 afilt lpf18 aswp, kpit*afiltgliss, aenv * 0.85, kdist
-aresult = afilt + anoise
-aresult = limit(aresult, -0dbfs*0.99, 0dbfs*0.99)
+  aresult = afilt + anoise
+  aresult = limit(aresult, -0dbfs*0.99, 0dbfs*0.99)
 xout aresult 
 endop
 
@@ -1122,12 +1123,12 @@ if imode == 0 then
    ashock *= expseg:a(1, p3*0.15, 0.03, p3*0.35, 0.01)  ;hit mode
 endif
 
-ares1 mode ashock + afdbk, kfrq, kq
-ares2 mode ashock + afdbk, kfrq * (9/4), kq 
+  ares1 mode ashock + afdbk, kfrq, kq
+  ares2 mode ashock + afdbk, kfrq * (9/4), kq 
 
-ares3 =  ares1 * ares2 * ashock
-ares3 buthp ares3, 25
-ares3     balance2 ares3, ashock
+  ares3 =  ares1 * ares2 * ashock
+  ares3 buthp ares3, 25
+  ares3     balance2 ares3, ashock
 adistort    distort1 ares3, 8, 1, 0.2, 0.1
 
 adistort *= 0.38
@@ -1342,7 +1343,7 @@ kwarp = abs(kwarp)
 katten *= -1
 kscale = kamp
 kcnt = icnt * kwarp
-ares poscil (kfrq >= sr/2 ? 0:kamp), (kfrq >= sr/2 ? 0:kfrq), -1, rnd(iphs)
+  ares poscil (kfrq >= sr/2 ? 0:kamp), (kfrq >= sr/2 ? 0:kfrq), -1, rnd(iphs)
 if (inumvoice > 0) then
    khz = kfrq * (kcnt+1)/kcnt
    kmodhz = khz * ((khz * 2) / khz) ^ abs(kstretch/(kcnt))
@@ -1518,7 +1519,7 @@ kamp, kpit, kmod xin
 kfmndx = 100*(2^kmod)/kpit ;richer harmonics with lower frequencies
 kmndx = kfmndx * transeg:k(1,limit(abs(p3),0.5,7),-3,0.25)
 aenv = mxadsr:a(0.007,0,1,0.2,0,0.1)
-ares foscili kamp,kpit,1,1,kmndx,-1
+  ares foscili kamp,kpit,1,1,kmndx,-1
 xout ares*aenv
 endop
 
@@ -1657,8 +1658,8 @@ endop
 opcode simpleverb,a,apP
 ain,itail,kmix xin
 afdbk init 0
-ares1 nestedap ain+afdbk*0.4, 2, itail, 0.197*itail, 0.31, 0.123*itail, 0.21
-ares2 nestedap ares1*0.5, 2, itail, 0.1933*itail, 0.21, 0.115*itail, 0.11
+  ares1 nestedap ain+afdbk*0.4, 2, itail, 0.197*itail, 0.31, 0.123*itail, 0.21
+  ares2 nestedap ares1*0.5, 2, itail, 0.1933*itail, 0.21, 0.115*itail, 0.11
 afdbk butterbp ares1, 1000, 20,1
 aout ntrpol ares2,ain,kmix
 xout aout
@@ -1705,8 +1706,8 @@ idepth1a = curve(itail*0.197,0.5/imaxdepth) * idepmod
 idepth2a = curve(itail*0.1232,0.5/imaxdepth) * idepmod
 idepth1b = curve(itail*0.19311,0.5/imaxdepth) * idepmod
 idepth2b = curve(itail*0.116,0.5/imaxdepth) * idepmod
-ares1 nestedap ain+afdbk*0.4, 2, imaxdepth, idepth1a, 0.31, idepth2a, 0.21
-ares2 nestedap ares1*0.5, 2, imaxdepth, idepth1b, 0.21, idepth2b, 0.11
+  ares1 nestedap ain+afdbk*0.4, 2, imaxdepth, idepth1a, 0.31, idepth2a, 0.21
+  ares2 nestedap ares1*0.5, 2, imaxdepth, idepth1b, 0.21, idepth2b, 0.11
 afdbk tone ares1,7000*kmix
 if idepth > 1 then
    ares3 ringverb ares1*0.9,itail,kmix*0.5,idepth-1
@@ -1715,6 +1716,206 @@ endif
 aout ntrpol ares2,ain,kmix
 xout aout
 endop
+;;;;;;;;;;;
+;;Timpani - modal resonances
+;;Based on a model from 'Timpani Drum Synthesis in MSoundfactory https://youtu.be/Fm3NxCDRk_M?si=koQqhDqfXSyjL37_
+;;Chandler Guitar 
+;;;;;;;;;;
+gi_timpharms[] fillarray 1.00,1.51,2.03,2.88,3.53,4.01,4.34,4.77,5.38,5.77,6.27,6.74,7.36,7.73,8.04,8.34,8.87,9.14,9.44,9.87,10.30,10.79,11.42,12.03,12.75,13.28,13.95,14.44,14.77,15.23,15.71,16.16
+gi_timpamps[] fillarray 0.00,-2.61,-10.5,-7.58,-21.1,-18.1,-3.45,-15.3,-10.5,-22.3,-11.4,-21.1,-21.9,-21.5,-26.5,-26.7,-26.5,-24.8,-27.2,-20.9,-31.1,-28.0,-24.2,-32.8,-25.3,-30.5,-29.4,-32.2,-29.4,-34.1,-32.3,-36.8
+
+opcode timpani,a,iio
+  iamp, ipit,iQ xin
+  iamp limit iamp, 0,1.6
+  iQ = (iQ == 0 ? 249:iQ)
+  kamp = iamp*5
+  kfrq linseg 8000,0.03,4000  
+  ares    pluck     kamp, kfrq, ipit, gi_mpft1, 4, 0.4152,1.1373  
+  ares lowres ares,linseg:k(1000,0.01,300),10
+  ares0 mode ares*ampdbfs(gi_timpamps[0]),ipit*gi_timpharms[0]*transeg:k(semitone(-0.5),1,-2,semitone(0.08)),iQ
+  ares1 mode ares*ampdbfs(gi_timpamps[1]),ipit*gi_timpharms[1],iQ
+  ares2 mode ares*ampdbfs(gi_timpamps[2]),ipit*gi_timpharms[2],iQ
+  ares3 mode ares*ampdbfs(gi_timpamps[3]),ipit*gi_timpharms[3],iQ
+  ares4 mode ares*ampdbfs(gi_timpamps[4]),ipit*gi_timpharms[4],iQ
+  ares5 mode ares*ampdbfs(gi_timpamps[5]),ipit*gi_timpharms[5],iQ
+  ares6 mode ares*ampdbfs(gi_timpamps[6]),ipit*gi_timpharms[6],iQ
+  ares7 mode ares*ampdbfs(gi_timpamps[7]),ipit*gi_timpharms[7],iQ
+  ares8 mode ares*ampdbfs(gi_timpamps[8]),ipit*gi_timpharms[8],iQ
+  ares9 mode ares*ampdbfs(gi_timpamps[9]),ipit*gi_timpharms[9],iQ
+  ares10 mode ares*ampdbfs(gi_timpamps[10]),ipit*gi_timpharms[10],iQ  
+  ares11 mode ares*ampdbfs(gi_timpamps[11]),ipit*gi_timpharms[11],iQ
+  ares12 mode ares*ampdbfs(gi_timpamps[12]),ipit*gi_timpharms[12],iQ
+  ares13 mode ares*ampdbfs(gi_timpamps[13]),ipit*gi_timpharms[13],iQ
+  ares14 mode ares*ampdbfs(gi_timpamps[14]),ipit*gi_timpharms[14],iQ
+  ares15 mode ares*ampdbfs(gi_timpamps[15]),ipit*gi_timpharms[15],iQ
+  ares16 mode ares*ampdbfs(gi_timpamps[16]),ipit*gi_timpharms[16],iQ
+  ares17 mode ares*ampdbfs(gi_timpamps[17]),ipit*gi_timpharms[17],iQ
+  ares18 mode ares*ampdbfs(gi_timpamps[18]),ipit*gi_timpharms[18],iQ
+  ares19 mode ares*ampdbfs(gi_timpamps[19]),ipit*gi_timpharms[19],iQ
+  ares20 mode ares*ampdbfs(gi_timpamps[20]),ipit*gi_timpharms[20],iQ
+  ares21 mode ares*ampdbfs(gi_timpamps[21]),ipit*gi_timpharms[21],iQ
+  ares22 mode ares*ampdbfs(gi_timpamps[22]),ipit*gi_timpharms[22],iQ
+  ares23 mode ares*ampdbfs(gi_timpamps[23]),ipit*gi_timpharms[23],iQ
+  ares24 mode ares*ampdbfs(gi_timpamps[24]),ipit*gi_timpharms[24],iQ
+  ares25 mode ares*ampdbfs(gi_timpamps[25]),ipit*gi_timpharms[25],iQ
+  ares26 mode ares*ampdbfs(gi_timpamps[26]),ipit*gi_timpharms[26],iQ
+  ares27 mode ares*ampdbfs(gi_timpamps[27]),ipit*gi_timpharms[27],iQ
+  ares28 mode ares*ampdbfs(gi_timpamps[28]),ipit*gi_timpharms[28],iQ
+  ares29 mode ares*ampdbfs(gi_timpamps[29]),ipit*gi_timpharms[29],iQ
+  ares30 mode ares*ampdbfs(gi_timpamps[30]),ipit*gi_timpharms[30],iQ
+  ares31 mode ares*ampdbfs(gi_timpamps[31]),ipit*gi_timpharms[31],iQ
+
+  aout sum ares0,ares1,ares2,ares3,ares,ares5,ares6,ares7,ares8,ares9,ares10  ,ares11,ares12,ares13,ares14,ares15,ares16,ares17,ares18,ares19,ares20,ares21,ares22,ares23,ares24,ares25,ares26,ares27,ares28,ares29,ares30,ares31
+  aout *= expseg:a(1,0.045,0.75,4,0.75)*0.03125
+  aout lpf18 aout,iamp*2500,iamp*0.5,iamp*0.5
+  aout *= linlin:i(iamp,1,3.7,65,130)
+  aout clip aout,1,1
+  xout aout
+endop
+;;;;
+;; Sean Costello's Gong.
+;;;;
+opcode gong, aa,ijjjj
+  iamp,ipit,if1,if2,itimbfn xin
+  setksmps 1
+  ipit = (ipit == -1 ? 127:ipit)
+  if1 = (if1 == -1 ? 50:if1)
+  if2 = (if2 == -1 ? 277:if2)
+  
+afilt1 init 0
+afilt2 init 0
+afilt3 init 0
+afilt4 init 0
+adel1 init 0
+adel2 init 0
+adel3 init 0
+adel4 init 0
+alimit1 init 0
+alimit2 init 0
+alimit3 init 0
+alimit4 init 0
+alimita init 0
+alimitb init 0
+alimitc init 0
+alimitd init 0
+
+anoise=0
+ipi = 3.141592654
+idel1 = 1/ipit
+ilooptime = idel1 * 3
+idel2 = 1/ipit * 2.25
+idel3 = 1/ipit * 3.616
+idel4 = 1/ipit * 5.06
+
+ipitchmod = 0
+idur = 3
+
+ilimit1 = (1 - ipi * if1 / sr) / (1 + ipi * if1 / sr)
+ilimit2 = (1 - ipi * if2 / sr) / (1 + ipi * if2 / sr)
+; "strike" the gong.
+  krandenv linseg 1, ilooptime, 1, 0, 0, idur-ilooptime, 0
+    
+anoise  oscili  krandenv * 1.2, ipit, itimbfn ;try gi_cosine for a harsh attack
+igain = 0.999 * 0.70710678117      ; gain of reverb
+
+k1      randi   .001, 3.1, .06
+k2      randi   .0011, 3.5, .9
+k3      randi   .0017, 1.11, .7
+k4      randi   .0006, 3.973, .3
+
+adum1   delayr  1
+adel1a  deltap3 idel1 + k1 * ipitchmod
+        delayw  anoise + afilt2 + afilt3
+
+kdel1 downsamp adel1a
+        if kdel1 < 0 goto or
+        klimit1 = ilimit1
+        goto next
+or:
+        klimit1 = ilimit2
+        next:
+        ax1     delay1  adel1a
+        adel1 = klimit1 * (adel1a + adel1) - ax1
+
+; Repeat the above for the next 3 delay lines.
+adum2   delayr  1
+adel2a  deltap3 idel2 + k2 * ipitchmod
+        delayw  anoise - afilt1 - afilt4
+
+kdel2 downsamp adel2a
+        if kdel2 < 0 goto or2
+        klimit2 = ilimit1
+        goto next2
+or2:
+        klimit2 = ilimit2
+        next2:
+        ax2     delay1  adel2a
+        adel2 = klimit2 * (adel2a + adel2) - ax2
+
+adum3   delayr  1
+adel3a  deltap3 idel3 + k3 * ipitchmod
+        delayw  anoise + afilt1 - afilt4
+
+kdel3 downsamp adel3a
+        if kdel3 < 0 goto or3
+        klimit3 = ilimit1
+        goto next3
+or3:
+        klimit3 = ilimit2
+        next3:
+        ax3     delay1  adel3a
+        adel3 = klimit3 * (adel3a + adel3) - ax3
+
+adum4   delayr  1
+adel4a  deltap3 idel4 + k4 * ipitchmod
+        delayw  anoise + afilt2 - afilt3
+
+kdel4 downsamp adel4a
+        if kdel4 < 0 goto or4
+        klimit4 = ilimit1
+        goto next4
+or4:
+        klimit4 = ilimit2
+        next4:
+        ax4     delay1  adel4a
+        adel4 = klimit4 * (adel4a + adel4) - ax4
+
+afilt1  tone    adel1 * igain, 20000
+afilt2  tone    adel2 * igain, 20000
+afilt3  tone    adel3 * igain, 20000
+afilt4  tone    adel4 * igain, 20000
+
+aoutl =  (afilt1 + afilt3) * iamp
+aoutr =  (afilt2 + afilt4) * iamp
+
+aoutl dcblock aoutl
+aoutr dcblock aoutr
+	    
+xout aoutl, aoutr
+endop
+
+;;;;;;;;;;;;;;;;;;
+;; delayfray
+;; adapted from Philipp Nuemann's recursive delayArray UDO (June 10, 2023).
+opcode delayfray, a, akkOpp
+  setksmps 1
+  aDelIn, kDelTime, kFdbk, kfilt,iInstances, iDelBuf xin 
+  kNextDel = kDelTime+(kDelTime/iInstances/1.5)
+  aDelDump delayr iDelBuf
+  aDelTap deltap kDelTime 
+  delayw aDelIn + (aDelTap * kFdbk)
+
+  aDelOut limit aDelTap, -1, 1
+
+  if iInstances > 1 then
+    aDelfilt  clfilt aDelOut,263,1,6,1,4
+    aDelcopy ntrpol aDelOut, aDelfilt, kfilt
+    aDelOut += delayfray(aDelcopy, kNextDel, kFdbk, kfilt,iInstances-1, iDelBuf)
+  endif
+  aDelOut limit aDelOut, -1, 1
+  xout aDelOut
+endop
+
 
 printf_i "finished loading Sounds.orc %f\n", 1, 1
 

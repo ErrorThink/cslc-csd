@@ -1,9 +1,6 @@
 <CsoundSynthesizer>
 <CsOptions>
-;-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
-;-odac9 --port=8099 --sample-rate=48000 --ksmps=32 --nchnls=2 --0dbfs=1 -B512 -b64 --nodisplays --messagelevel=1120 -Ma --omacro:SOUNDLIB=Sounds.orc
--odac9 --port=8099 --sample-rate=48000 --ksmps=32 --nchnls=2 --0dbfs=1 -B512 -b64 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
-
+-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
 </CsOptions>
 <CsVersion>
 After 6.18
@@ -634,7 +631,7 @@ opcode send, 0, a[]j
   asigs[],ichan xin
   ialen lenarray asigs
   ichan = (ichan == -1 ? ialen - 1:ichan)
-  Sname nstrstr p1 ;temporary. Debugging only.
+  ;;Sname nstrstr p1 ;temporary. Debugging only.
   asig = asigs[ichan]  
   ga_cslc_PatchArr[p1][ichan] = ga_cslc_PatchArr[p1][ichan] + asig
   if ichan > 0 then
@@ -681,6 +678,10 @@ opcode _cslc_getSrcNumOuts,i,S
   Ssrc xin
   iSrcnum nstrnum Ssrc
   iSrccount = gi_cslc_Srcouts[iSrcnum][1]
+  ;; if (iSrccount == 0 && iSrcnum > 0) then
+  ;;   schedule iSrcnum,0,0
+  ;;   iSrccount = gi_cslc_Srcouts[iSrcnum][1]
+  ;; endif
   xout iSrccount
 endop
 
@@ -4042,8 +4043,8 @@ instr 299
 ainL chnget "outs:0"
 ainR chnget "outs:1"
 gi_cslc_Destins[p1][1] = 2
-aLeft compress ainL, ainL, 0, 90, 90, 100, 0.0, 0.08, 0.125
-aRight compress ainR, ainR, 0, 90, 90, 100, 0.0, 0.08, 0.125
+;aLeft compress ainL, ainL, 0, 90, 90, 100, 0.0, 0.08, 0.125
+;aRight compress ainR, ainR, 0, 90, 90, 100, 0.0, 0.08, 0.125
 outc ainL, ainR
 reclear:
 Schanslice[] slicearray_i gS_cslc_channelarr, 0, gi_cslc_chntally
@@ -4056,14 +4057,15 @@ endif
 endin
 schedule 299,0,-1
 
-;Limiter and optional peak meter.
+;;Limiter and peak meter.
+;;This always-on instrument intercepts the output audio and applies a limiter.
 instr 301
   kreset metro gkVUmonitorfreq
   aout1, aout2 monitor ;get audio from spout
   amax maxabs aout1, aout2
   kmax peak amax
   
-  ;;UNCOMMENT this printf line to see a peak meter in a terminal supporting ANSI Escape codes.
+  ;;COMMENT this printf line if your terminal prints garbage. 
   printf "\033[1G\033[0;32m****************\033[0;33m*********\033[0;31m|***\033[0m\033[%sG\033[0K\033[25G|", kreset,sprintfk("%d",int(kmax * 25))
 
   if kreset == 1 then
