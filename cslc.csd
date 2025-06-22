@@ -1,6 +1,6 @@
 <CsoundSynthesizer>
 <CsOptions>
--odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
+-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds_private.orc
 </CsOptions>
 <CsVersion>
 After 6.18
@@ -181,7 +181,7 @@ seesaw - oscillate between two values
 walker - Random walk
 randselect_i - Select a random value fromthe argument list
 curve/curvek - convex/concave curves
-
+midiroute - route a midi channel to an instrument name 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Optional: See also cslc-mode, the emacs minor mode for live coding.
 */
@@ -189,6 +189,7 @@ Optional: See also cslc-mode, the emacs minor mode for live coding.
 ;Setup actions for cslc livecode environment.
 gk_tempo init 60
 gk_now init 0
+gk_MasterVol init 1
 
 gkVUmonitorfreq init 12 ;frequency of the ANSI term vumeter updates.
 
@@ -228,7 +229,12 @@ gi_cslc_nstance ftgen 0,0,-giMAXINSTR,-2,0
 gi_cslc_nstance_cnt ftgen 0,0,-giMAXINSTR,-2,0
 
 ;;;default instrument allocations for midi
-gi_midichanmap ftgen 0, 0, 16, -2, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116
+gi_cslc_midichanmap ftgen 0, 0, 16, -2, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116
+gk_cslc_MIDISUS init 0 ; for sustain pedal.
+gk_cslc_midisusarray[] init 64
+gk_cslc_susndx = 0
+gi_cslc_omnimidi1 = 0
+gk_cslc_MIDIOMNI1 init 0.5
 
 ;channel instance control used by linslide
 gi_cslc_chanfn ftgen 0,0,256,-2,0
@@ -238,7 +244,7 @@ gS_cslc_ActiveChans[] init 200
 gkloopsignal init 0
 
 ;Some scale tables
-gi12edofn ftgen 0,0,64,-2, 12, 2, 263, 0,  
+gi12edofn ftgen 0,0,64,-2, 12, 2, 263, 0,
 1, 2^(1/12) ,2^(2/12),2^(3/12),2^(4/12),2^(5/12),2^(6/12),2^(7/12),2^(8/12),2^(9/12),2^(10/12),2^(11/12),2
 
 gi17edofn ftgen 0,0,64,-2, 17, 2, 263, 0,  
@@ -315,13 +321,18 @@ gi_CurrentScale ftgen 0,0,128,-2,7, 2,    263, 0,
 gkTonic_ndx init 0  ;index of the tonic in gi_CurrentScale
 giTonic_ndx = 0  ;might be better than krate
 gi_midikeyref = 60
-gi_midipb_amount = 1
+gi_midipb_amount = 3
+gSmidi_pb_channel = "midi_pb:1"
 
-;works like massign with a named instrument.
+
+;;works like massign with a named instrument.
 opcode midiroute,0,iS
    ichan, Sinsname xin
-  tableiw nstrnum(Sinsname),limit:i(ichan-1,0,16),gi_midichanmap   
+  tableiw nstrnum(Sinsname),limit:i(ichan-1,0,16),gi_cslc_midichanmap   
 endop
+
+
+
 ;;;;;
 ;; schedule evaluation of arbitrary code
 ;;;
@@ -444,6 +455,55 @@ opcode find,i,S
   iresult _cslc_find Schan, gS_cslc_ActiveChans
   xout iresult
 endop
+
+;;return the midi cc value for the controller number (ictrlnum).
+;;The midi channel is either taken from the midi channel  assigned to the enclosing instrument,
+;;or specified in the optional argument idefmch 
+;;Optional argument icinit can set an initial value.
+opcode mctrl,K,ioo  
+  ictrlnum,icinit,imchannel xin  
+  if imchannel == 0 then
+    icurrentins = int(p1)
+    imidindx = _cslc_find(icurrentins, gi_cslc_midichanmap)
+  else
+    imidindx = imchannel - 1
+  endif
+  ;; the string channel (i-time only)
+  Smidi2chn sprintf "midi_cc:%d:%d",ictrlnum,imidindx + 1
+  ;; get the initial value of ictrl
+  icval chnget Smidi2chn
+  if icval == 0 then
+    icval = icinit
+  endif
+  ;; initialise the output value 
+  kctrlval init icval
+  kmval chnget Smidi2chn
+  ktrig changed2 kmval
+  if ktrig == 1 then
+    ;;adjust if the value changes 
+    kctrlval = kmval
+  endif
+  xout kctrlval
+endop
+
+opcode mctrl_i,i,ioo  
+  ictrlnum,icinit,imchannel xin  
+  if imchannel == 0 then
+    icurrentins = int(p1)
+    imidindx = _cslc_find(icurrentins, gi_cslc_midichanmap)
+  else
+    imidindx = imchannel - 1
+  endif
+  ;; the string channel (i-time only)
+  Smidi2chn sprintf "midi_cc:%d:%d",ictrlnum,imidindx + 1
+  ;; get the initial value of ictrl
+  icval chnget Smidi2chn
+  if icval == 0 then
+    icval = icinit
+  endif
+  xout icval
+endop
+
 
 ;fillarray for audio vectors
 ;This opcode generates multiple overloaded versions of fillarray to handle mutltiple args for audio inputs.
@@ -678,10 +738,12 @@ opcode _cslc_getSrcNumOuts,i,S
   Ssrc xin
   iSrcnum nstrnum Ssrc
   iSrccount = gi_cslc_Srcouts[iSrcnum][1]
-  ;; if (iSrccount == 0 && iSrcnum > 0) then
-  ;;   schedule iSrcnum,0,0
-  ;;   iSrccount = gi_cslc_Srcouts[iSrcnum][1]
-  ;; endif
+  if (iSrccount == 0 && iSrcnum > 0) then
+    ;alwayson Ssrc
+    schedule iSrcnum,0,0
+    iSrccount = gi_cslc_Srcouts[iSrcnum][1]
+    printf_i "instrument activated. iSrccount = %f\n",1,iSrccount    
+  endif
   xout iSrccount
 endop
 
@@ -816,15 +878,60 @@ trim_i iresult, iresndx
 xout iresult
 endop
 
+;; opcode _cslc_patchsig, 0,SSiS
+;; Ssrc, Sdest,ilevel,Slevelchn xin
+;; isrc nstrnum Ssrc
+;; isrcnums = _cslc_getSrcNumOuts(Ssrc) - 1;e.g. 0, 1
+;; idestnums = _cslc_getDestNumIns(Sdest) - 1; e.g. "Rvb:0", "Rvb:1"
+;; imaxpatches max isrcnums, idestnums
+;; inewpatches[] init imaxpatches+1
+;; icurrentpatches[] _cslc_getSrcInstances, isrc
+;; until (imaxpatches < 0) do
+;;     isrcmodulo = imaxpatches % (isrcnums + 1)
+;;     idestmodulo = imaxpatches % (idestnums + 1)
+;;     SDestchan sprintf "%s:%d",Sdest,idestmodulo 
+;;     iencoded = encode4(isrc,isrcmodulo,imaxpatches,0)
+;;     ienc = 5 + (iencoded / 10^7)
+;;     printf_i "Patching %s:%d (instance %f) => Destchan %s\n",1,Ssrc,isrcmodulo,ienc, SDestchan
+;;     if ilevel == -1 then
+;;       schedule ienc, 0, -1, SDestchan, Slevelchn, imaxpatches * -1    
+;;       else
+;;       schedule ienc, 0, -1, SDestchan, ilevel, imaxpatches * -1
+;;     endif
+;;     irecresult _cslc_recordpatch ienc
+;;     inewpatches[imaxpatches] = iencoded
+;;     if (_cslc_find(SDestchan, gS_cslc_channelarr) == -1) then
+;;        gS_cslc_channelarr[gi_cslc_chntally] = SDestchan
+;;        gi_cslc_chntally += 1
+;;     endif
+;;     imaxpatches -= 1 
+;; od
+;; gk_cslc_clearupdate init 1 
+;; ioldndx = lenarray(icurrentpatches) - 1 
+;; until ioldndx < 0 do
+;;    instnce = icurrentpatches[ioldndx]
+;;    if (_cslc_find(instnce,inewpatches) == -1) then
+;;       turnoff2_i gi_cslc_patchsig_inum+(instnce / 10^7),4,1
+;;       _cslc_removepatch(gi_cslc_patchsig_inum+(instnce / 10^7))
+;;       printf_i "removed patch %f\n",1,gi_cslc_patchsig_inum+(instnce / 10^7)
+;;    else
+;;       ;printf_i "\n\n**** found %f, doing nothing *** \n\n",1,instnce
+;;    endif
+;;    ioldndx -= 1
+;; od
+;; endop
+
 opcode _cslc_patchsig, 0,SSiS
 Ssrc, Sdest,ilevel,Slevelchn xin
-isrc nstrnum Ssrc
-isrcnums = _cslc_getSrcNumOuts(Ssrc) - 1;e.g. 0, 1
-idestnums = _cslc_getDestNumIns(Sdest) - 1; e.g. "Rvb:0", "Rvb:1"
-imaxpatches max isrcnums, idestnums
-inewpatches[] init imaxpatches+1
-icurrentpatches[] _cslc_getSrcInstances, isrc
-until (imaxpatches < 0) do
+  isrc nstrnum Ssrc
+  isnumcheck = _cslc_getSrcNumOuts(Ssrc)
+  isrcnums = isnumcheck - 1;e.g. 0, 1
+  ;;printf_i "_cslc_patchsig: isrcnums = %d\n",1,isrcnums
+  idestnums = _cslc_getDestNumIns(Sdest) - 1; e.g. "Rvb:0", "Rvb:1"
+  imaxpatches max isrcnums, idestnums
+  inewpatches[] init imaxpatches+1
+  icurrentpatches[] _cslc_getSrcInstances, isrc
+  until (imaxpatches < 0) do
     isrcmodulo = imaxpatches % (isrcnums + 1)
     idestmodulo = imaxpatches % (idestnums + 1)
     SDestchan sprintf "%s:%d",Sdest,idestmodulo 
@@ -832,35 +939,36 @@ until (imaxpatches < 0) do
     ienc = 5 + (iencoded / 10^7)
     printf_i "Patching %s:%d (instance %f) => Destchan %s\n",1,Ssrc,isrcmodulo,ienc, SDestchan
     if ilevel == -1 then
-      schedule ienc, 0, -1, SDestchan, Slevelchn, imaxpatches * -1    
-      else
-      schedule ienc, 0, -1, SDestchan, ilevel, imaxpatches * -1
+      schedule ienc, 0, -1, SDestchan, Slevelchn,isrcnums,Ssrc;, imaxpatches * -1
+    else
+      schedule ienc, 0, -1, SDestchan, ilevel,isrcnums,Ssrc;, imaxpatches * -1
     endif
     irecresult _cslc_recordpatch ienc
     inewpatches[imaxpatches] = iencoded
     if (_cslc_find(SDestchan, gS_cslc_channelarr) == -1) then
-       gS_cslc_channelarr[gi_cslc_chntally] = SDestchan
-       gi_cslc_chntally += 1
+      gS_cslc_channelarr[gi_cslc_chntally] = SDestchan
+      gi_cslc_chntally += 1
     endif
     imaxpatches -= 1 
-od
-gk_cslc_clearupdate init 1 
-ioldndx = lenarray(icurrentpatches) - 1 
-until ioldndx < 0 do
-   instnce = icurrentpatches[ioldndx]
-   if (_cslc_find(instnce,inewpatches) == -1) then
-      turnoff2_i gi_cslc_patchsig_inum+(instnce / 10^7),4,1
-      _cslc_removepatch(gi_cslc_patchsig_inum+(instnce / 10^7))
-      printf_i "removed patch %f\n",1,gi_cslc_patchsig_inum+(instnce / 10^7)
-   else
-      ;printf_i "\n\n**** found %f, doing nothing *** \n\n",1,instnce
-   endif
-   ioldndx -= 1
-od
+  od
+  gk_cslc_clearupdate init 1 
+  ioldndx = lenarray(icurrentpatches) - 1 
+  until ioldndx < 0 do
+     instnce = icurrentpatches[ioldndx]
+     if (_cslc_find(instnce,inewpatches) == -1) then
+     turnoff2_i gi_cslc_patchsig_inum+(instnce / 10^7),4,1
+     _cslc_removepatch(gi_cslc_patchsig_inum+(instnce / 10^7))
+     printf_i "removed patch %f\n",1,gi_cslc_patchsig_inum+(instnce / 10^7)
+  else
+    ;printf_i "\n\n**** found %f, doing nothing *** \n\n",1,instnce
+  endif
+  ioldndx -= 1
+  od
 endop
 
 opcode patchsig, 0,SSp
   Ssrc, Sdest, ilevel xin
+  printf_i "patchsig %s -> %s\n",1,Ssrc, Sdest  
   _cslc_patchsig Ssrc, Sdest, ilevel, "_unused"
 endop
 
@@ -904,7 +1012,8 @@ while (ipatchndx < ipatchexpected) do
   iencoded = encode4(isrc,isrcselect,imaxpatches,0)
   ienc = gi_cslc_patchsig_inum + (iencoded / 10^7)  
   printf_i "Patching %s:%d (instance %f) => Destchan %s\n",1,Ssrc,isrcselect,ienc, SDestchan
-  schedule ienc, 0, -1, SDestchan, ilevel,imaxpatches * -1
+  ;;schedule ienc, 0, -1, SDestchan, ilevel,imaxpatches * -1
+  schedule ienc, 0, -1, SDestchan, ilevel,Ssrc;imaxpatches * -1
   irecresult _cslc_recordpatch ienc  
   ipatchndx += 1
   if idestchanarr[idselect] == 0 then
@@ -1402,7 +1511,27 @@ endop
 
 ;;returns the pitch when given a scale degree and a modifier (pitchbend) channel.
 ;;channel control uses integers to reach the next scale degree
-;;e.g. A channel value of -2 bends the pitch down 2 steps in the scale 
+;;e.g. A channel value of -2 bends the pitch down 2 steps in the scale
+
+opcode cpstun3_i,i,ii
+   inote, itable  xin
+   ibend frac inote
+   in1 = int(inote)
+   if1 cpstuni in1, itable
+   if2 cpstuni in1 + (1 * (ibend >= 0 ? 1:-1)), itable
+   icps = if1 * (if2 / if1) ^ abs(ibend)
+xout icps
+endop
+
+opcode sclbend_i, i,iSo
+  iscldeg, Sbend, iscale xin
+  iscale = (iscale == 0 ? gi_CurrentScale : iscale)
+  icurrent, ierr cps2deg iscldeg, iscale
+  ipitmod chnget Sbend
+  inewpit cpstun3_i ipitmod + ierr + icurrent, iscale
+  xout inewpit
+endop
+
 opcode sclbend, k,iSo
   iscldeg, Sbend, iscale xin
   iscale = (iscale == 0 ? gi_CurrentScale : iscale)
@@ -3121,13 +3250,14 @@ endop
 
 ;iofftime turns off the newest note after n seconds. default is -1 == no turnoff.
 ;;sorts chord before playing. Works better for tied notes.
-opcode chrdi,0,i[]i[]ooooo
-  ioriginal[],iintervals[],idbdamp,iturnofftm,iautoinvert,insincr,iscale xin
+opcode chrdi,0,i[]i[]ooojoo
+  ioriginal[],iintervals[],idbdamp,iturnofftm,iautoinvert,irndspread,insincr,iscale xin
   indx      =      0
   ioriginsnum = abs(ioriginal[0])
   iinsnumsig signum ioriginal[0]
   iorigst = ioriginal[1]
   iorigdur = ioriginal[2]
+  irndspread = (irndspread == -1 ? 0.03 : irndspread)
   insincr = (iorigdur < 0 ? 0.01 : (insincr == 1 ? 0.01 : insincr))
   iscale    =  (iscale == 0 ? gi_CurrentScale : iscale)
   ipitval = 0
@@ -3180,25 +3310,25 @@ opcode chrdi,0,i[]i[]ooooo
   until ipvsndx == lenarray(ipvsorted) do
     ipvsval = ipvsorted[ipvsndx] 
     if (iplen == 5) then
-      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst)+betarand:i(iorigdur,irndspread,2-irndspread), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale)
     elseif (iplen == 6) then
-      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst)+betarand:i(iorigdur,irndspread,2-irndspread), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale), ioriginal[5]
     elseif (iplen == 7) then
-      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst)+betarand:i(iorigdur,irndspread,2-irndspread), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6]
     elseif (iplen == 8) then
-      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst)+betarand:i(iorigdur,irndspread,2-irndspread), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7]
     elseif (iplen == 9) then
-      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst)+betarand:i(iorigdur,irndspread,2-irndspread), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8]
     elseif (iplen == 10) then
-      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst)+betarand:i(iorigdur,irndspread,2-irndspread), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9]
     elseif (iplen == 11) then
-      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst), tempodur(iorigdur), ievamp*iampfac,\
+      event_i     "i", ioriginsnum + ((ipvsndx + 1) * insincr), tempodur(iorigst)+betarand:i(iorigdur,irndspread,2-irndspread), tempodur(iorigdur), ievamp*iampfac,\
                       cpstuni(ipvsval,iscale), ioriginal[5], ioriginal[6], ioriginal[7], ioriginal[8], ioriginal[9],ioriginal[10]
   endif
   ipvsndx += 1
@@ -3815,33 +3945,74 @@ endin
 
 ;;midi routing instrument
 ;;uncomment instantiation below only if MIDI is connected.
+;only call if midi connected. Crashes otherwise
 instr 4
-kstatus, kchan, kdata1, kdata2 midiin
-kbend init 0  
-kchan = (kchan == 0 ? 1 : kchan)
-kins table kchan - 1, gi_midichanmap
-if (kstatus == 128 || (kstatus == 144 && kdata2 == 0)) then
-    ;;printf "NOTEOFF: note = %d ch = %d\n", rnd:k(1), kdata1, kchan    
-    turnoff2 kins+(kdata1*0.001),4,1			
-elseif (kstatus == 144) then
+  kstatus, kchan, kdata1, kdata2 midiin
+  kchan = (kchan == 0 ? 1 : kchan)
+  kins table kchan - 1, gi_cslc_midichanmap
+  if (kstatus == 128 || (kstatus == 144 && kdata2 == 0)) then
+    if gk_cslc_MIDISUS == 1 then
+      printf "SUSTAIN ON: IGNORING NOTEOFFs note = %d ch = %d\n", rnd:k(1), kdata1, kchan
+    else
+      ;;printf "NOTEOFF: note = %d ch = %d\n", rnd:k(1), kdata1, kchan
+      turnoff2 kins+(kdata1*0.001),4,1
+    endif
+  elseif (kstatus == 144) then
     ;;printf "NOTEON: note = %d, vel = %d, ch = %d\n", rnd:k(1), kdata1, kdata2, kchan
     kamp ampmidicurve kdata2, 1, 0.5
+    if gk_cslc_MIDISUS == 1 then
+      printf "%s\n",rnd:k(1),"adding %f to susarray at indx gk_cslc_susndx\n"
+      gk_cslc_midisusarray[gk_cslc_susndx] = kins + (kdata1 * 0.001)
+      gk_cslc_susndx += 1
+    endif  
+    ;event "i", kins + (kdata1 * 0.001), 0, -1, kamp, cpstun3(kdata1 - gi_midikeyref, gi_CurrentScale); may need to change 60
+    gSmidi_pb_channel sprintfk "midi_pb:%d",kchan
+    ;;event i, %f, %f, %f, %f, %f \n", rnd:k(1),kins + (kdata1 * 0.001), 0, -1, kamp, sclbend(cpstun3(kdata1 - gi_midikeyref, gi_CurrentScale), gSmidi_pb_channel)
     event "i", kins + (kdata1 * 0.001), 0, -1, kamp, cpstun3(kdata1 - gi_midikeyref, gi_CurrentScale); may need to change 60
-elseif (kstatus == 224) then
-    Smidi_pb_channel sprintfk "midi_pb:%d",kchan    
-    chnset (((kdata2 * 128) + kdata1 - 8192) / 8192) * gi_midipb_amount,Smidi_pb_channel
-    ;;printf "%s = %f\n", rnd:k(1), Smidi_pb_channel,(((kdata2 * 128) + kdata1 - 8192) / 8192) * gi_midipb_amount
-    printf "%s\n", kstatus, Smidi_pb_channel
-elseif (kstatus == 0) then
-    ;;  do nothing
-else    
+    ;;event "i", kins + (kdata1 * 0.001), 0, -1, kamp, sclbend(cpstun3(kdata1 - gi_midikeyref, gi_CurrentScale), gSmidi_pb_channel)
+  elseif (kstatus == 176) then
+    ;; control change
     Smidi_control_channel sprintfk "midi_cc:%d:%d",kdata1,kchan
+    if kdata1 == 64 then
+      ;sustain pedal
+      if kdata2 = 0 then
+	printf "%s\n",rnd:k(1),"sustain pedal OFF"	
+	gk_cslc_MIDISUS = kdata2
+	kndx = 0
+	while (kndx < gk_cslc_susndx) do
+	  turnoff2 gk_cslc_midisusarray[kndx],0,1
+	  kndx += 1
+	od
+	gk_cslc_susndx = 0
+      else
+	printf "%s\n",rnd:k(1),"sustain pedal ON"
+	gk_cslc_MIDISUS = kdata2/127
+      endif
+    elseif kdata1 == gi_cslc_omnimidi1 then
+      gk_cslc_MIDIOMNI1 = kdata2/127
+    endif
     chnset kdata2/127, Smidi_control_channel
-    ;;printf "%s = %f\n", kstatus+1, Smidi_control_channel,kdata2/127
-    printf "%s %d\n", kdata1, Smidi_control_channel,kstatus        
+    ;;printf "%s %f\n", kstatus, Smidi_control_channel,kdata2/127
+    printf "%s %f\n", kdata2+1, Smidi_control_channel,kdata2/127    
+  elseif (kstatus == 224) then
+    ;; pitchbend
+    gSmidi_pb_channel sprintfk "midi_pb:%d",kchan    
+    chnset (((kdata2 * 128) + kdata1 - 8192) / 8192) * gi_midipb_amount,gSmidi_pb_channel
+    printf "%s = %f\n", rnd:k(1), gSmidi_pb_channel,(((kdata2 * 128) + kdata1 - 8192) / 8192) * gi_midipb_amount
+    printf "%s\n", kstatus, gSmidi_pb_channel
+  elseif (kstatus == 160) then
+    ;;polyphonic key pressure
+    Smidi_pp_channel sprintfk "midi_pp:%d:%d",kdata1,kchan
+    chnset kdata2/127, Smidi_pp_channel
+    printf "%s %f\n", kdata2+1, Smidi_pp_channel,kdata2/127    
+  elseif (kstatus == 192) then
+    ;; program change - not implemented yet.    
+  elseif (kstatus == 0) then
+    ;;  do nothing
+  else
+    printf "Unkown MIDI message: status:%d, chan%d, b1:%d, b2:%d\n",rnd:k(1),kstatus, kchan, kdata1, kdata2
 endif
 endin
-;only call if midi connected. Crashes otherwise
 schedule 4, 0, -1
 
 ;; A hack to predefine instrument numbers, and avoice errors in midi assignment
@@ -3849,23 +4020,48 @@ instr 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
 endin
 
 ;;;;;;;;;;PATCHING INSTRUMENTS;;;;;;;;;;;;;;;;
+;; instr 5
+;; idec = round((p1 - gi_cslc_patchsig_inum) * 10^7)
+;; isrcnum, ichan, instnce,inull decode4 idec
+;;   asrc = ga_cslc_PatchArr[isrcnum][ichan]
+;;   klevel init p5
+;;   Slevel = p5
+;;   istrcmp strcmp strsub(Slevel,0,7),"soundin" ; undocumented 'feature' of csound.
+;;   if istrcmp != 0 then
+;;     klevel chnget Slevel
+;;   endif  
+;;    asrc declickr asrc*klevel, 0.5
+;;    Sdest = p4 
+;;    chnmix asrc, Sdest
+;; iclearenc = encode4(isrcnum,ichan,0,0)
+;; iclrenc = gi_cslc_clearsig_inum + (iclearenc / 10^7)
+;; inotused = p6
+;; schedule iclrenc, 0, -1    
+;; endin
+
 instr 5
 idec = round((p1 - gi_cslc_patchsig_inum) * 10^7)
-isrcnum, ichan, instnce,inull decode4 idec
-  asrc = ga_cslc_PatchArr[isrcnum][ichan]
+  isrcnum, ichan, instnce,inull decode4 idec
+  ;;; debug
+  isrccheck = p6
+  Ssrc = p7
+  Sdest = p4   
+  iSrccount = gi_cslc_Srcouts[isrcnum][1]
   klevel init p5
   Slevel = p5
   istrcmp strcmp strsub(Slevel,0,7),"soundin" ; undocumented 'feature' of csound.
   if istrcmp != 0 then
     klevel chnget Slevel
-  endif  
-   asrc declickr asrc*klevel, 0.5
-   Sdest = p4 
-   chnmix asrc, Sdest
-iclearenc = encode4(isrcnum,ichan,0,0)
-iclrenc = gi_cslc_clearsig_inum + (iclearenc / 10^7)
-inotused = p6
-schedule iclrenc, 0, -1    
+  endif
+  asrc = ga_cslc_PatchArr[isrcnum][ichan]
+  asrc declickr asrc*klevel, 0.5
+  chnmix asrc, Sdest
+  iclearenc = encode4(isrcnum,ichan,0,0)
+  iclrenc = gi_cslc_clearsig_inum + (iclearenc / 10^7)
+  schedule iclrenc, 0, -1
+  if (isrccheck == -1) && (isrccheck != iSrccount) then
+    _cslc_patchsig Ssrc, strsub(Sdest,0,strlen(Sdest)-2), (qnan(p5) > 0 ? 0 : p5), Slevel
+  endif
 endin
 
 instr 6
@@ -4040,12 +4236,11 @@ endop
 
 ;output instrument
 instr 299
-ainL chnget "outs:0"
+
+  ainL chnget "outs:0"
 ainR chnget "outs:1"
 gi_cslc_Destins[p1][1] = 2
-;aLeft compress ainL, ainL, 0, 90, 90, 100, 0.0, 0.08, 0.125
-;aRight compress ainR, ainR, 0, 90, 90, 100, 0.0, 0.08, 0.125
-outc ainL, ainR
+outc ainL*gk_MasterVol, ainR*gk_MasterVol
 reclear:
 Schanslice[] slicearray_i gS_cslc_channelarr, 0, gi_cslc_chntally
 achanslice[] slicearray ga_cslc_channelclear, 0, gi_cslc_chntally
@@ -4055,28 +4250,38 @@ if gk_cslc_clearupdate == 1 then
    reinit reclear
 endif
 endin
+gk_MasterVol init 0
 schedule 299,0,-1
 
 ;;Limiter and peak meter.
 ;;This always-on instrument intercepts the output audio and applies a limiter.
 instr 301
-  kreset metro gkVUmonitorfreq
-  aout1, aout2 monitor ;get audio from spout
-  amax maxabs aout1, aout2
-  kmax peak amax
-  
-  ;;COMMENT this printf line if your terminal prints garbage. 
-  printf "\033[1G\033[0;32m****************\033[0;33m*********\033[0;31m|***\033[0m\033[%sG\033[0K\033[25G|", kreset,sprintfk("%d",int(kmax * 25))
 
-  if kreset == 1 then
-    kmax = 0
-  endif
-  areplaceout1 compress aout1, amax, 0, 90, 90, 100, 0.0, 0.08, 0.125
-  areplaceout2 compress aout2, amax, 0, 90, 90, 100, 0.0, 0.08, 0.125
-
-  aout1 = areplaceout1 - aout1
-  aout2 = areplaceout2 - aout2
+  aouts[] monitor
+  ;aout1, aout2 monitor ;get audio from spout
   
+  ;amax maxabs aout1, aout2
+  amax maxabs aouts[0],aouts[1]
+  
+  ;;ANSI terminal VU Meter.
+  ;;Uncomment the block below to enable.
+  ;;-- note: Some terminals may require line buffering to be disabled.
+  ;;On posix systems this can be achieved by prefixing the csound command with 'stdbuf -e0'.
+  
+  ;; kmax peak amax
+  ;; kreset metro gkVUmonitorfreq  
+  ;; printf "\033[1G\033[0;32m****************\033[0;33m*********\033[0;31m|***\033[0m\033[%sG\033[0K\033[25G|", kreset,sprintfk("%d",int(kmax * 25))
+  ;; if kreset == 1 then
+  ;;   kmax = 0
+  ;; endif
+  
+  
+  areplaceout1 compress aouts[0], amax, 0, 90, 90, 100, 0.0, 0.08, 0.003
+  areplaceout2 compress aouts[1], amax, 0, 90, 90, 100, 0.0, 0.08, 0.003
+
+  aout1 = areplaceout1 - aouts[0]
+  aout2 = areplaceout2 - aouts[1]
+    
 outc aout1, aout2
 endin
 
