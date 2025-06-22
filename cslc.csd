@@ -1,6 +1,6 @@
 <CsoundSynthesizer>
 <CsOptions>
--odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds_private.orc
+-odac --port=8099 --sample-rate=48000 --ksmps=64 --nchnls=2 --0dbfs=1 --nodisplays --messagelevel=1120 --omacro:SOUNDLIB=Sounds.orc
 </CsOptions>
 <CsVersion>
 After 6.18
